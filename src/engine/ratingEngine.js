@@ -14,7 +14,14 @@ import { FALLBACK_RW, FALLBACK_CONST, ARCHETYPE_ALIGNMENT } from '../data/fallba
 export function getAge(dob) {
     if (!dob) return null;
     const p = dob.split("/");
-    return p.length === 3 ? 2026 - Number(p[2]) : null;
+    if (p.length !== 3) return null;
+    const birthDate = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+    if (isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
 }
 
 export function getBracket(dob) {

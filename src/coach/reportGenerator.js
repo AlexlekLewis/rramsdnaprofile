@@ -31,7 +31,8 @@ export async function generateReportPDF(containerEl, playerName = 'Player') {
         pageEl.style.left = '0';
         pageEl.style.top = '0';
         pageEl.style.zIndex = '-1';
-        document.body.appendChild(pageEl.cloneNode(true));
+        const clonedEl = pageEl.cloneNode(true);
+        document.body.appendChild(clonedEl);
 
         const canvas = await html2canvas(pageEl, {
             width: PW,
@@ -43,6 +44,7 @@ export async function generateReportPDF(containerEl, playerName = 'Player') {
         });
 
         pageEl.style.cssText = origStyle;
+        clonedEl.remove();
 
         const imgData = canvas.toDataURL('image/png');
 

@@ -313,8 +313,21 @@ export function Ring({ value, size = 100, color = B.pk, label }) {
 
 // ═══ COMPETITION LEVEL SELECTOR ═══
 export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, vmcuAssocs }) {
-    const [selGroup, setSelGroup] = useState(null);
-    const [selAssoc, setSelAssoc] = useState(null);
+    const [selGroup, setSelGroup] = useState(() => {
+        if (!value) return null;
+        const tier = (compTiers || []).find(t => t.code === value);
+        if (!tier) return null;
+        return TIER_GROUPS.find(g => g.tiers.some(tg => tier.tier === tg)) || null;
+    });
+    const [selAssoc, setSelAssoc] = useState(() => {
+        if (!value) return null;
+        const tier = (compTiers || []).find(t => t.code === value);
+        if (!tier) return null;
+        const grp = TIER_GROUPS.find(g => g.tiers.some(tg => tier.tier === tg));
+        if (!grp || !isCommunityGroup(grp)) return null;
+        const ac = (assocComps || []).find(c => c.competition_tier_code === value);
+        return ac ? ac.association_abbrev : null;
+    });
 
     const tiersForGroup = selGroup && !isCommunityGroup(selGroup) ? (compTiers || []).filter(t => {
         const gMatch = !gender || t.gender === gender || t.gender === 'All' || t.gender === 'Mixed' || t.gender === 'M/F';
@@ -326,16 +339,6 @@ export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, v
         if (!gender) return true;
         return c.gender === gender || c.gender === 'All' || c.gender === 'Mixed';
     }) : [];
-
-    const selTier = value ? (compTiers || []).find(t => t.code === value) : null;
-    if (selTier && !selGroup) {
-        const grp = TIER_GROUPS.find(g => g.tiers.some(tg => selTier.tier === tg));
-        if (grp && grp !== selGroup) setTimeout(() => setSelGroup(grp), 0);
-        if (grp && isCommunityGroup(grp) && !selAssoc) {
-            const ac = (assocComps || []).find(c => c.competition_tier_code === value);
-            if (ac) setTimeout(() => setSelAssoc(ac.association_abbrev), 0);
-        }
-    }
 
     const assocFull = a => {
         const obj = (vmcuAssocs || []).find(v => v.abbrev === a);

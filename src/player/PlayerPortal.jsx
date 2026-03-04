@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { signOut as authSignOut } from "../auth/authHelpers";
 import { B, F, dkWrap, sCard } from "../data/theme";
 import Journal from "./Journal";
 import IDPView from "./IDPView";
@@ -25,11 +24,9 @@ export default function PlayerPortal() {
         fetchData();
     }, [userProfile?.id]);
 
-    // Fallback if needed
     const handleSignOut = async () => {
         try {
-            await authSignOut();
-            window.location.reload();
+            await signOut();
         } catch (e) {
             console.error(e);
         }

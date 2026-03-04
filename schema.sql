@@ -685,3 +685,51 @@ CREATE INDEX IF NOT EXISTS idx_program_members_auth_user ON program_members(auth
 
 -- Verify indexes created:
 -- SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname;
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 5. SELF-SERVICE REGISTRATION — Security-definer signup RPC
+--    Allows new players/coaches to register via invite links.
+--    Role is hardcoded to 'player' or 'coach' — admin self-registration is impossible.
+-- ══════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION public.register_new_user(
+    p_username text,
+    p_role text
+)
+RETURNS jsonb
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_existing_id uuid;
+BEGIN
+    -- Validate role (NEVER allow admin/super_admin self-registration)
+    IF p_role NOT IN ('player', 'coach') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Invalid role');
+    END IF;
+
+    -- Validate username format
+    IF length(trim(p_username)) < 3 THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Username must be at least 3 characters');
+    END IF;
+
+    -- Check username uniqueness
+    SELECT auth_user_id INTO v_existing_id
+    FROM program_members
+    WHERE username = lower(trim(p_username));
+
+    IF v_existing_id IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Username already taken');
+    END IF;
+
+    -- Insert member record linked to the current auth user
+    INSERT INTO program_members (username, role, active, auth_user_id)
+    VALUES (lower(trim(p_username)), p_role, true, auth.uid());
+
+    RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.register_new_user(text, text) TO authenticated;

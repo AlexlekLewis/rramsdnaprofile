@@ -57,6 +57,65 @@ export async function signInWithUsername(username, password) {
 }
 
 /**
+ * Register a new user (player or coach) via invite link.
+ * Creates a Supabase Auth user, then registers them in program_members via RPC.
+ */
+export async function signUpNewUser(username, password, fullName, role) {
+    const cleanUsername = username.toLowerCase().trim();
+
+    // Validate username format
+    if (!/^[a-z0-9._]{3,30}$/.test(cleanUsername)) {
+        throw new Error('Username must be 3-30 characters: letters, numbers, dots, or underscores.');
+    }
+
+    // Validate role (defense in depth — RPC also validates)
+    if (!['player', 'coach'].includes(role)) {
+        throw new Error('Invalid role.');
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters.');
+    }
+
+    // 1. Create Supabase Auth user
+    const internalEmail = `${cleanUsername}@rra.internal`;
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: internalEmail,
+        password,
+        options: { data: { full_name: fullName } },
+    });
+
+    if (signUpError) {
+        if (signUpError.message?.includes('already registered')) {
+            throw new Error('This username is already taken.');
+        }
+        throw new Error(signUpError.message || 'Registration failed.');
+    }
+
+    if (!signUpData?.user) {
+        throw new Error('Registration failed — no user returned.');
+    }
+
+    // 2. Register in program_members via security-definer RPC
+    const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('register_new_user', { p_username: cleanUsername, p_role: role });
+
+    if (rpcError) {
+        throw new Error('Registration failed. Please try again.');
+    }
+
+    if (rpcResult && !rpcResult.success) {
+        throw new Error(rpcResult.error || 'Registration failed.');
+    }
+
+    // 3. Store role for post-login profile setup
+    localStorage.setItem('rra_pending_role', role);
+
+    return signUpData;
+}
+
+/**
  * Sign out the current user.
  */
 export async function signOut() {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { supabase } from "../supabaseClient";
 import {
     signInWithUsername,
+    signUpNewUser,
     signOut as authSignOut,
     getSession,
     onAuthStateChange,
@@ -14,6 +15,13 @@ const AuthContext = createContext();
 // ── Dev bypass: add ?devRole=coach or ?devRole=player to URL on localhost ──
 const DEV_MODE = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const DEV_ROLE_PARAM = DEV_MODE && new URLSearchParams(window.location.search).get('devRole');
+
+// ── Join link detection: ?join=player or ?join=coach ──
+const JOIN_PARAM = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('join')
+    : null;
+const VALID_JOIN_ROLES = ['player', 'coach'];
+const INITIAL_JOIN_ROLE = VALID_JOIN_ROLES.includes(JOIN_PARAM) ? JOIN_PARAM : null;
 
 function makeDevProfile(role) {
     return {
@@ -29,7 +37,8 @@ export function AuthProvider({ children }) {
     const [session, setSession] = useState(DEV_ROLE_PARAM ? { user: { id: 'dev' } } : null);
     const [userProfile, setUserProfile] = useState(DEV_ROLE_PARAM ? makeDevProfile(DEV_ROLE_PARAM) : null);
     const [authLoading, setAuthLoading] = useState(DEV_ROLE_PARAM ? false : true);
-    const [authStep, setAuthStep] = useState('login'); // 'login' | 'signing-in'
+    const [authStep, setAuthStep] = useState('login'); // 'login' | 'signing-in' | 'register' | 'registering'
+    const [joinRole, setJoinRole] = useState(INITIAL_JOIN_ROLE);
 
     useEffect(() => {
         // Skip real auth when in dev bypass mode
@@ -108,6 +117,24 @@ export function AuthProvider({ children }) {
         }
     };
 
+    const signUp = async (username, password, fullName, role) => {
+        setAuthStep('registering');
+        try {
+            const result = await signUpNewUser(username, password, fullName, role);
+            // Clear ?join= param from URL without page reload
+            if (typeof window !== 'undefined') {
+                const url = new URL(window.location);
+                url.searchParams.delete('join');
+                window.history.replaceState({}, '', url);
+            }
+            setJoinRole(null);
+            return result;
+        } catch (e) {
+            setAuthStep('register');
+            throw e;
+        }
+    };
+
     const signOut = async () => {
         try {
             ['rra_pStep', 'rra_selP', 'rra_cView', 'rra_cPage'].forEach(k => sessionStorage.removeItem(k));
@@ -134,7 +161,10 @@ export function AuthProvider({ children }) {
         portal,
         isAdmin,
         signIn,
-        signOut
+        signUp,
+        signOut,
+        joinRole,
+        setJoinRole,
     };
 
     return (

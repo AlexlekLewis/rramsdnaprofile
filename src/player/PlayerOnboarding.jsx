@@ -17,20 +17,7 @@ import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
     Hdr, SecH, Inp, Sel, TArea, NumInp, Dots, AssGrid, CompLevelSel
 } from "../shared/FormComponents";
-
-// Session state hook for persisting across reloads but not tabs
-function useSessionState(key, defaultValue) {
-    const [value, setValue] = useState(() => {
-        try {
-            const stored = sessionStorage.getItem(key);
-            return stored !== null ? JSON.parse(stored) : defaultValue;
-        } catch { return defaultValue; }
-    });
-    useEffect(() => {
-        try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { }
-    }, [key, value]);
-    return [value, setValue];
-}
+import { useSessionState } from "../shared/useSessionState";
 
 export default function PlayerOnboarding() {
     const { session, signOut, portal } = useAuth();
@@ -39,8 +26,10 @@ export default function PlayerOnboarding() {
     const [pStep, setPStep] = useSessionState('rra_pStep', 0);
     const [showOnboardGuide, setShowOnboardGuide] = useSessionState('rra_obGuide', true);
 
-    const [pd, setPd] = useState({ grades: [{}], topBat: [{}], topBowl: [{}] });
+    const [pd, setPd] = useSessionState('rra_pd', { grades: [{}], topBat: [{}], topBowl: [{}] });
     const pu = (k, v) => setPd(d => ({ ...d, [k]: v }));
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     const stepStartRef = useRef(Date.now());
 
@@ -65,8 +54,19 @@ export default function PlayerOnboarding() {
     const goTop = () => window.scrollTo(0, 0);
     const btnSty = (ok, full) => ({ padding: full ? "14px 20px" : "8px 16px", borderRadius: 8, border: "none", background: ok ? `linear-gradient(135deg,${B.bl},${B.pk})` : B.g200, color: ok ? B.w : B.g400, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: ok ? "pointer" : "default", letterSpacing: .5, textTransform: "uppercase", width: full ? "100%" : "auto", marginTop: 6 });
 
+    const isValidDob = (dob) => {
+        if (!dob) return false;
+        const m = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) return false;
+        const [, dd, mm, yyyy] = m;
+        const d = new Date(+yyyy, +mm - 1, +dd);
+        return d.getFullYear() === +yyyy && d.getMonth() === +mm - 1 && d.getDate() === +dd && d < new Date();
+    };
+    const dobInvalid = pd.dob && !isValidDob(pd.dob);
+
     // ── Onboarding step timer ──
     const advanceStep = (next) => {
+        if (pStep === 0 && (!pd.name || !isValidDob(pd.dob))) return;
         const elapsed = Date.now() - stepStartRef.current;
         const progress = pd.onboardingProgress || { steps: {}, totalTimeMs: 0, lastStepReached: 0 };
         progress.steps[pStep] = { completed: true, durationMs: elapsed, completedAt: new Date().toISOString() };
@@ -86,7 +86,11 @@ export default function PlayerOnboarding() {
                 <SecH title="Player Profile" sub="Tell us about yourself" />
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0 12px" }}>
                     <Inp half label="Full Name *" value={pd.name} onChange={v => pu("name", v)} ph="Your full name" />
-                    <Inp half label="Date of Birth *" value={pd.dob} onChange={v => pu("dob", v)} ph="DD/MM/YYYY" />
+                    <div style={{ flex: 1, minWidth: 130, marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, color: dobInvalid ? B.red : B.g600, fontFamily: F, marginBottom: 1 }}>Date of Birth *{dobInvalid ? ' (use DD/MM/YYYY)' : ''}</div>
+                        <input type="text" value={pd.dob || ""} onChange={e => pu("dob", e.target.value)} placeholder="DD/MM/YYYY"
+                            style={{ width: "100%", border: "none", borderBottom: `1.5px solid ${dobInvalid ? B.red : B.g200}`, padding: "5px 0", fontSize: 12, fontFamily: F, color: B.g800, outline: "none", background: "transparent", boxSizing: "border-box" }} />
+                    </div>
                     <Inp half label="Phone" value={pd.phone} onChange={v => pu("phone", v)} ph="Mobile" />
                     <Inp half label="Email" value={pd.email} onChange={v => pu("email", v)} ph="Email" />
                     <Inp half label="Club" value={pd.club} onChange={v => pu("club", v)} ph="e.g. Doncaster CC" />
@@ -287,7 +291,14 @@ export default function PlayerOnboarding() {
                 {/* ═══ BATTING IDENTITY ═══ */}
                 <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
                     <SecH title="Your Batting Game" sub="Help us understand your batting style and strengths" />
-                    <Sel half label="Batting Position" value={pd.batPosition} onChange={v => pu('batPosition', v)} opts={BAT_POSITIONS.map(p => p.label)} />
+                    <div style={{ flex: 1, minWidth: 130, marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginBottom: 1 }}>Batting Position</div>
+                        <select value={pd.batPosition || ""} onChange={e => pu('batPosition', e.target.value)}
+                            style={{ width: "100%", border: "none", borderBottom: `1.5px solid ${B.g200}`, padding: "5px 0", fontSize: 12, fontFamily: F, color: pd.batPosition ? B.g800 : B.g400, outline: "none", background: "transparent", boxSizing: "border-box" }}>
+                            <option value="">Select...</option>
+                            {BAT_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                        </select>
+                    </div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.pk, fontFamily: F, marginTop: 10, marginBottom: 4 }}>Preferred Batting Phases</div>
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4 }}>When do you feel most dangerous?</div>
                     <ChipSelect options={BATTING_PHASE_PREFS} selected={pd.batPhases} onToggle={v => pu('batPhases', v)} color={B.pk} />
@@ -315,7 +326,14 @@ export default function PlayerOnboarding() {
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F, marginTop: 4, marginBottom: 4 }}>Preferred Bowling Phases</div>
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4 }}>When do you want the ball?</div>
                     <ChipSelect options={BOWLING_PHASE_PREFS} selected={pd.bwlPhases} onToggle={v => pu('bwlPhases', v)} color={B.bl} />
-                    {isPace && <Sel half label="Bowling Speed" value={pd.bwlSpeed} onChange={v => pu('bwlSpeed', v)} opts={BOWLING_SPEEDS.map(s => s.label)} />}
+                    {isPace && <div style={{ flex: 1, minWidth: 130, marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginBottom: 1 }}>Bowling Speed</div>
+                        <select value={pd.bwlSpeed || ""} onChange={e => pu('bwlSpeed', e.target.value)}
+                            style={{ width: "100%", border: "none", borderBottom: `1.5px solid ${B.g200}`, padding: "5px 0", fontSize: 12, fontFamily: F, color: pd.bwlSpeed ? B.g800 : B.g400, outline: "none", background: "transparent", boxSizing: "border-box" }}>
+                            <option value="">Select...</option>
+                            {BOWLING_SPEEDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </select>
+                    </div>}
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F, marginTop: 8, marginBottom: 4 }}>Bowling Variations</div>
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4 }}>Which deliveries do you have in your toolkit?</div>
                     <ChipSelect options={isPace ? PACE_VARIATIONS : SPIN_VARIATIONS} selected={pd.bwlVariations} onToggle={v => pu('bwlVariations', v)} color={B.bl} />
@@ -392,13 +410,23 @@ export default function PlayerOnboarding() {
             return (<div>
                 <SecH title="Review & Submit" />
                 <div style={sCard}><div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{pd.name || "—"}</div><div style={{ fontSize: 11, color: B.g400, fontFamily: F }}>{pd.dob || "—"} • {pd.club || "—"} • {gc} competition level(s){tb > 0 ? ` • ${tb} top score(s)` : ''}{tw > 0 ? ` • ${tw} bowling fig(s)` : ''}</div></div>
-                <button onClick={async () => {
+                {submitError && <div style={{ fontSize: 11, color: B.red, fontFamily: F, marginBottom: 8, fontWeight: 600 }}>{submitError}</div>}
+                <button disabled={submitting} onClick={async () => {
                     if (!pd.name || !pd.dob) return;
-                    const saved = await savePlayerToDB(pd, session?.user?.id);
-                    // (Legacy: setPlayers used to be called here for Coach Portal, 
-                    // now redundant as players reload from DB anyway).
-                    setPStep(7);
-                }} style={btnSty(pd.name && pd.dob, true)}>SUBMIT SURVEY</button>
+                    setSubmitting(true);
+                    setSubmitError('');
+                    try {
+                        const saved = await savePlayerToDB(pd, session?.user?.id);
+                        if (!saved) throw new Error('Save returned no data');
+                        try { sessionStorage.removeItem('rra_pd'); sessionStorage.removeItem('rra_pStep'); } catch {}
+                        setPStep(7);
+                    } catch (e) {
+                        console.error('Submit error:', e);
+                        setSubmitError('Failed to submit. Please check your connection and try again.');
+                    } finally {
+                        setSubmitting(false);
+                    }
+                }} style={btnSty(pd.name && pd.dob && !submitting, true)}>{submitting ? 'SUBMITTING...' : 'SUBMIT SURVEY'}</button>
             </div>);
         }
 

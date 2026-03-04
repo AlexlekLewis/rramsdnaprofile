@@ -56,7 +56,9 @@ const MOCK_CONSTANTS = {
 // ───────── getAge ─────────
 describe('getAge', () => {
     it('returns correct age from DD/MM/YYYY format', () => {
-        expect(getAge('15/03/2010')).toBe(16);
+        // Use a date far enough in the past that birthday has definitely passed
+        const year = new Date().getFullYear() - 16;
+        expect(getAge(`01/01/${year}`)).toBe(16);
     });
     it('returns null for null/undefined input', () => {
         expect(getAge(null)).toBeNull();
@@ -555,8 +557,9 @@ describe('Edge Cases', () => {
         expect(result.r).toBe(1);
     });
 
-    it('getAge uses 2026 as reference year', () => {
-        expect(getAge('01/01/2006')).toBe(20);
-        expect(getAge('01/01/2016')).toBe(10);
+    it('getAge calculates age correctly based on current date', () => {
+        const yr = new Date().getFullYear();
+        expect(getAge(`01/01/${yr - 20}`)).toBe(20);
+        expect(getAge(`01/01/${yr - 10}`)).toBe(10);
     });
 });

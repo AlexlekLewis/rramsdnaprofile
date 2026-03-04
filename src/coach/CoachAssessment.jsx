@@ -22,20 +22,7 @@ import EngineGuide from "./EngineGuide";
 // ═══ REPORT CARD ═══
 import ReportCard from "./ReportCard";
 import { generateReportPDF } from "./reportGenerator";
-
-// ═══ SESSION-PERSISTED STATE ═══
-function useSessionState(key, defaultValue) {
-    const [value, setValue] = useState(() => {
-        try {
-            const stored = sessionStorage.getItem(key);
-            return stored !== null ? JSON.parse(stored) : defaultValue;
-        } catch { return defaultValue; }
-    });
-    useEffect(() => {
-        try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { }
-    }, [key, value]);
-    return [value, setValue];
-}
+import { useSessionState } from "../shared/useSessionState";
 
 export default function CoachAssessment() {
     const { session, portal, isAdmin, signOut } = useAuth();

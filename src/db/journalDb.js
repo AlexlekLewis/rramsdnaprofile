@@ -7,7 +7,7 @@ export async function loadRecentSessionsForPlayer(playerId) {
     const { data: members, error: memErr } = await supabase
         .from('program_members')
         .select('program_id')
-        .eq('player_id', playerId)
+        .eq('auth_user_id', playerId)
         .eq('active', true);
 
     if (memErr) throw memErr;
