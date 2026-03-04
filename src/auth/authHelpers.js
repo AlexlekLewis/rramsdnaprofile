@@ -43,7 +43,7 @@ export async function signInWithUsername(username, password) {
     localStorage.setItem('rra_pending_role', member.role);
 
     // Sign in using the internal email
-    const internalEmail = `${cleanUsername}@rra.internal`;
+    const internalEmail = `${cleanUsername}@rradna.app`;
     const { data, error } = await supabase.auth.signInWithPassword({
         email: internalEmail,
         password,
@@ -79,7 +79,7 @@ export async function signUpNewUser(username, password, fullName, role) {
     }
 
     // 1. Create Supabase Auth user
-    const internalEmail = `${cleanUsername}@rra.internal`;
+    const internalEmail = `${cleanUsername}@rradna.app`;
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: internalEmail,
         password,
