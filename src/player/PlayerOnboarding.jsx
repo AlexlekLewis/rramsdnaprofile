@@ -3,7 +3,7 @@ import { trackEvent, EVT } from "../analytics/tracker";
 import { useAuth } from "../context/AuthContext";
 import { useEngine } from "../context/EngineContext";
 
-import { B, F, dkWrap, sCard } from "../data/theme";
+import { B, F, getDkWrap, sCard } from "../data/theme";
 import {
     ROLES, BAT_ARCH, BWL_ARCH, VOICE_QS, BAT_POSITIONS,
     BATTING_PHASE_PREFS, BOWLING_PHASE_PREFS, BOWLING_SPEEDS,
@@ -13,6 +13,7 @@ import {
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
 import { savePlayerToDB } from "../db/playerDb";
+import { supabase } from "../supabaseClient";
 import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
     Hdr, SecH, Inp, Sel, TArea, NumInp, Dots, AssGrid, CompLevelSel
@@ -418,6 +419,11 @@ export default function PlayerOnboarding() {
                     try {
                         const saved = await savePlayerToDB(pd, session?.user?.id);
                         if (!saved) throw new Error('Save returned no data');
+                        // Mark user_profiles.submitted so portal routing works on refresh
+                        if (session?.user?.id) {
+                            const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', session.user.id);
+                            if (upErr) console.warn('user_profiles.submitted update failed:', upErr.message);
+                        }
                         try { sessionStorage.removeItem('rra_pd'); sessionStorage.removeItem('rra_pStep'); } catch {}
                         setPStep(7);
                     } catch (e) {
@@ -484,7 +490,7 @@ export default function PlayerOnboarding() {
             </div>
         </div>}
 
-        <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...dkWrap }}>{renderP()}</div>
+        <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...getDkWrap() }}>{renderP()}</div>
 
         {pStep < 7 && <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", zIndex: 100 }}>
             <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else signOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>

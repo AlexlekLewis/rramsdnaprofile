@@ -25,14 +25,12 @@ export async function generateReportPDF(containerEl, playerName = 'Player') {
     for (let i = 0; i < pages.length; i++) {
         const pageEl = pages[i];
 
-        // Temporarily make the page visible for capture
+        // Temporarily position the page for capture
         const origStyle = pageEl.style.cssText;
         pageEl.style.position = 'fixed';
         pageEl.style.left = '0';
         pageEl.style.top = '0';
         pageEl.style.zIndex = '-1';
-        const clonedEl = pageEl.cloneNode(true);
-        document.body.appendChild(clonedEl);
 
         const canvas = await html2canvas(pageEl, {
             width: PW,
@@ -44,7 +42,6 @@ export async function generateReportPDF(containerEl, playerName = 'Player') {
         });
 
         pageEl.style.cssText = origStyle;
-        clonedEl.remove();
 
         const imgData = canvas.toDataURL('image/png');
 

@@ -37,7 +37,7 @@ export async function markAttendance({ playerId, sessionId, status, markedBy, so
     const { data, error } = await supabase
         .from('attendance')
         .upsert(
-            { player_id: playerId, session_id: sessionId, status, marked_by: markedBy, source, updated_at: new Date().toISOString() },
+            { player_id: playerId, session_id: sessionId, status, marked_by: markedBy, source },
             { onConflict: 'player_id, session_id' }
         )
         .select()

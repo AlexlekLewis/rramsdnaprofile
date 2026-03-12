@@ -105,7 +105,7 @@ export async function savePlayerToDB(pd, authUserId) {
     };
     if (authUserId) insertData.auth_user_id = authUserId;
     const { data: player, error: pErr } = await supabase.from('players').insert(insertData).select().single();
-    if (pErr) { console.error('Save player error:', pErr); return null; }
+    if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
     const grades = (pd.grades || []).filter(g => g.level).map((g, i) => ({
         player_id: player.id, level: g.level, age_group: g.ageGroup, shield: g.shield || '', team: g.team || '',
         association: g.association || '', matches: +g.matches || 0, batting_innings: +g.batInn || 0, runs: +g.runs || 0, high_score: +g.hs || 0,
@@ -117,7 +117,10 @@ export async function savePlayerToDB(pd, authUserId) {
         hs_balls_faced: +g.hsBallsFaced || 0, hs_boundaries: +g.hsBoundaries || 0,
         format: g.format || '', sort_order: i
     }));
-    if (grades.length) { const { error: gErr } = await supabase.from('competition_grades').insert(grades); if (gErr) console.error('Save grades error:', gErr); }
+    if (grades.length) {
+        const { error: gErr } = await supabase.from('competition_grades').insert(grades);
+        if (gErr) console.error('Save grades error (player saved OK):', gErr);
+    }
     return player;
 }
 
@@ -164,16 +167,17 @@ export async function saveAssessmentToDB(playerId, cd) {
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
         squad_rec: cd.sqRec || null, updated_at: new Date().toISOString()
     };
-    await supabase.from('coach_assessments').upsert(row, { onConflict: 'player_id' });
+    const { error: upsertErr } = await supabase.from('coach_assessments').upsert(row, { onConflict: 'player_id' });
+    if (upsertErr) throw upsertErr;
 }
 
 // ═══ CALIBRATION DATA LOADERS ═══
 
 export async function loadSkillDefs() {
     const { data, error } = await supabase.from('skill_definitions').select('*');
-    if (error) { console.error('Load skill_definitions error:', error); return null; }
+    if (error) throw error;
     const out = {};
-    data.forEach(r => {
+    (data || []).forEach(r => {
         if (!out[r.skill_name]) out[r.skill_name] = {};
         out[r.skill_name][r.level] = r.description;
     });
@@ -182,9 +186,9 @@ export async function loadSkillDefs() {
 
 export async function loadStatBenchmarks() {
     const { data, error } = await supabase.from('stat_benchmarks').select('*');
-    if (error) { console.error('Load stat_benchmarks error:', error); return null; }
+    if (error) throw error;
     const out = {};
-    data.forEach(r => {
+    (data || []).forEach(r => {
         if (!out[r.cti_band]) out[r.cti_band] = {};
         out[r.cti_band][r.metric] = r.benchmarks;
     });
@@ -193,16 +197,16 @@ export async function loadStatBenchmarks() {
 
 export async function loadStatDomainWeights() {
     const { data, error } = await supabase.from('stat_domain_weights').select('*');
-    if (error) { console.error('Load stat_domain_weights error:', error); return null; }
+    if (error) throw error;
     const out = {};
-    data.forEach(r => { out[r.age_tier] = { t: +r.t, i: +r.i, m: +r.m, h: +r.h, ph: +r.ph, s: +r.s }; });
+    (data || []).forEach(r => { out[r.age_tier] = { t: +r.t, i: +r.i, m: +r.m, h: +r.h, ph: +r.ph, s: +r.s }; });
     return out;
 }
 
 export async function loadStatSubWeights() {
     const { data, error } = await supabase.from('stat_sub_weights').select('*');
-    if (error) { console.error('Load stat_sub_weights error:', error); return null; }
+    if (error) throw error;
     const out = {};
-    data.forEach(r => { out[r.role] = [+r.batting, +r.bowling, +r.fielding]; });
+    (data || []).forEach(r => { out[r.role] = [+r.batting, +r.bowling, +r.fielding]; });
     return out;
 }

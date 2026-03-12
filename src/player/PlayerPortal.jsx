@@ -1,28 +1,42 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { B, F, dkWrap, sCard } from "../data/theme";
+import { B, F, getDkWrap, sCard } from "../data/theme";
 import Journal from "./Journal";
 import IDPView from "./IDPView";
 import { loadAttendanceForPlayer } from "../db/observationDb";
+import { supabase } from "../supabaseClient";
 
 export default function PlayerPortal() {
     const { session, userProfile, signOut } = useAuth();
     const [view, setView] = useState("home"); // home | journal | idp
     const [recentAtt, setRecentAtt] = useState([]);
+    const [playerId, setPlayerId] = useState(null);
 
     useEffect(() => {
-        if (!userProfile?.id) return;
+        if (!session?.user?.id) return;
+        let cancelled = false;
         async function fetchData() {
             try {
-                const att = await loadAttendanceForPlayer(userProfile.id);
-                // Just take the top 5 for the dashboard
-                setRecentAtt(att.slice(0, 5));
+                // Look up the player's players.id from auth_user_id
+                const { data: playerRow } = await supabase
+                    .from('players')
+                    .select('id')
+                    .eq('auth_user_id', session.user.id)
+                    .eq('submitted', true)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single();
+                if (cancelled || !playerRow) return;
+                setPlayerId(playerRow.id);
+                const att = await loadAttendanceForPlayer(playerRow.id);
+                if (!cancelled) setRecentAtt(att.slice(0, 5));
             } catch (err) {
                 console.error("Error loading player dashboard data:", err);
             }
         }
         fetchData();
-    }, [userProfile?.id]);
+        return () => { cancelled = true; };
+    }, [session?.user?.id]);
 
     const handleSignOut = async () => {
         try {
@@ -42,7 +56,7 @@ export default function PlayerPortal() {
                 )}
                 <div>
                     <div style={{ fontSize: 16, fontWeight: 800, color: B.w, fontFamily: F }}>{title}</div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontFamily: F }}>{userProfile?.name}</div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontFamily: F }}>{userProfile?.full_name}</div>
                 </div>
             </div>
             {!showBack && (
@@ -70,13 +84,13 @@ export default function PlayerPortal() {
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
             <Header title="Player Portal" />
 
-            <div style={{ padding: 16, ...dkWrap }}>
+            <div style={{ padding: 16, ...getDkWrap() }}>
 
                 {/* ═══ WELCOME BANNER ═══ */}
                 <div style={{ background: `linear-gradient(135deg, ${B.nvD}, ${B.bl})`, borderRadius: 16, padding: 24, marginBottom: 20, color: B.w, position: 'relative', overflow: 'hidden' }}>
                     <div style={{ position: 'relative', zIndex: 2 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 4, fontFamily: F }}>Welcome back,</div>
-                        <div style={{ fontSize: 24, fontWeight: 800, fontFamily: F, marginBottom: 12 }}>{userProfile?.name?.split(' ')[0] || 'Player'}</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, fontFamily: F, marginBottom: 12 }}>{userProfile?.full_name?.split(' ')[0] || 'Player'}</div>
                         <div style={{ display: 'flex', gap: 12 }}>
                             <div style={{ background: "rgba(255,255,255,0.1)", padding: '6px 12px', borderRadius: 8, backdropFilter: 'blur(10px)' }}>
                                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>PROGRAM</div>

@@ -1,6 +1,6 @@
 // ═══ SHARED UI COMPONENTS ═══
 import { useState } from 'react';
-import { B, F, LOGO, sGrad, sCard, _isDesktop, DSZ, DSF } from '../data/theme';
+import { B, F, LOGO, sGrad, sCard, isDesktop, getDSZ, getDSF } from '../data/theme';
 import { TIER_GROUPS, isCommunityGroup } from '../data/competitionData';
 
 // ═══ HEADER ═══
@@ -81,13 +81,13 @@ export function NumInp({ label, value, onChange, w = 52 }) {
 // ═══ DOTS (1-5 RATING — standalone, kept for other uses) ═══
 export function Dots({ value, onChange, color = B.pk }) {
     return (
-        <div style={{ display: "flex", gap: _isDesktop ? 6 : 5 }}>
+        <div style={{ display: "flex", gap: isDesktop() ? 6 : 5 }}>
             {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} onClick={() => onChange(value === n ? 0 : n)}
                     style={{
-                        width: DSZ, height: DSZ, borderRadius: "50%", border: `2px solid ${value >= n ? color : B.g200}`,
+                        width: getDSZ(), height: getDSZ(), borderRadius: "50%", border: `2px solid ${value >= n ? color : B.g200}`,
                         background: value >= n ? color : "transparent", cursor: "pointer", transition: "all 0.2s",
-                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: DSF, fontWeight: 700,
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: getDSF(), fontWeight: 700,
                         color: value >= n ? B.w : B.g400, fontFamily: F
                     }}>{n}</button>
             ))}
@@ -102,7 +102,7 @@ const COACH_LABELS = ['', 'Novice', 'Developing', 'Competent', 'Advanced', 'Elit
 export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix }) {
     const [openIdx, setOpenIdx] = useState(null);
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: _isDesktop ? 'repeat(3, 1fr)' : '1fr', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isDesktop() ? 'repeat(3, 1fr)' : '1fr', gap: 6 }}>
             {items.map((item, i) => {
                 const k = `${keyPrefix}_${i}`;
                 const v = values[k] || 0;
@@ -116,7 +116,7 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                         border: isOpen ? `2px solid ${color}40` : `1.5px solid ${done ? `${B.grn}50` : B.g200}`,
                         overflow: 'hidden',
                         transition: 'all 0.25s ease',
-                        gridColumn: isOpen && _isDesktop ? '1 / -1' : undefined,
+                        gridColumn: isOpen && isDesktop() ? '1 / -1' : undefined,
                         boxShadow: isOpen ? `0 4px 16px ${color}15` : 'none',
                     }}>
                         {/* ── Collapsed tile header ── */}
@@ -176,7 +176,7 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                                 {/* Rating tiles */}
                                 <div style={{
                                     display: 'grid',
-                                    gridTemplateColumns: _isDesktop ? 'repeat(5, 1fr)' : 'repeat(5, 1fr)',
+                                    gridTemplateColumns: isDesktop() ? 'repeat(5, 1fr)' : 'repeat(5, 1fr)',
                                     gap: 6, marginBottom: defs ? 10 : 0,
                                 }}>
                                     {[1, 2, 3, 4, 5].map(n => {
@@ -270,9 +270,9 @@ export function AssRow({ label, value, onR, color, SKILL_DEFS }) {
     const [showDefs, setShowDefs] = useState(false);
     const defs = SKILL_DEFS?.[label];
     return (
-        <div style={{ background: B.g100, borderRadius: 6, padding: _isDesktop ? '10px 14px' : '10px 12px', marginBottom: 5 }}>
-            <div style={{ ...(_isDesktop ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : {}) }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: _isDesktop ? 0 : 6 }}>
+        <div style={{ background: B.g100, borderRadius: 6, padding: isDesktop() ? '10px 14px' : '10px 12px', marginBottom: 5 }}>
+            <div style={{ ...(isDesktop() ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : {}) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: isDesktop() ? 0 : 6 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: B.g800, fontFamily: F }}>{label}</div>
                     {defs && <button onClick={(e) => { e.stopPropagation(); setShowDefs(s => !s); }}
                         style={{ width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${showDefs ? color : B.g300}`, background: showDefs ? `${color}15` : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: showDefs ? color : B.g400, fontFamily: F, padding: 0, lineHeight: 1, flexShrink: 0 }}

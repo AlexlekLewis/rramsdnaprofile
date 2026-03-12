@@ -2,12 +2,12 @@
 // Extracted from the monolith App.jsx for standalone DNA Profile system.
 // Contains: player roster, survey view, assessment pages, PDI summary, report card generation.
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useEngine } from "../context/EngineContext";
 
 // ═══ DATA & ENGINE ═══
-import { B, F, LOGO, sGrad, sCard, dkWrap, _isDesktop } from "../data/theme";
+import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB } from "../db/playerDb";
@@ -17,11 +17,10 @@ import { COACH_DEFS } from "../data/skillDefinitions";
 // ═══ SHARED UI ═══
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring } from "../shared/FormComponents";
 import { SaveToast, useSaveStatus } from "../shared/SaveToast";
-import EngineGuide from "./EngineGuide";
 
-// ═══ REPORT CARD ═══
-import ReportCard from "./ReportCard";
-import { generateReportPDF } from "./reportGenerator";
+// ═══ REPORT CARD (lazy-loaded — pulls in html2canvas + jsPDF) ═══
+const ReportCard = React.lazy(() => import("./ReportCard"));
+const EngineGuide = React.lazy(() => import("./EngineGuide"));
 import { useSessionState } from "../shared/useSessionState";
 
 export default function CoachAssessment() {
@@ -48,7 +47,13 @@ export default function CoachAssessment() {
 
     const refreshPlayers = useCallback(async () => {
         setLoading(true);
-        try { const ps = await loadPlayersFromDB(); setPlayers(ps.length ? ps : MOCK); } catch (e) { console.error(e); setPlayers(MOCK); }
+        try {
+            const ps = await loadPlayersFromDB();
+            setPlayers(ps.length ? ps : (import.meta.env.DEV ? MOCK : []));
+        } catch (e) {
+            console.error(e);
+            setPlayers(import.meta.env.DEV ? MOCK : []);
+        }
         setLoading(false);
     }, []);
 
@@ -66,11 +71,13 @@ export default function CoachAssessment() {
             <button onClick={signOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
         </div>
 
-        <div style={{ padding: 12, ...dkWrap }}>
+        <div style={{ padding: 12, ...getDkWrap() }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <SecH title={`Player Roster (${players.filter(p => p.submitted).length})`} sub="Tap player to view survey or assess" />
             </div>
-            <div style={_isDesktop ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
+            <div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
+                {loading && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>Loading players...</div>}
+                {!loading && players.filter(p => p.submitted).length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>No submitted players yet. Players will appear here once they complete onboarding.</div>}
                 {players.filter(p => p.submitted).map(p => {
                     const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
                     const hasCd = Object.keys(p.cd || {}).filter(k => k.match(/^t1_/)).length > 0;
@@ -119,7 +126,7 @@ export default function CoachAssessment() {
 
         return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
             <Hdr label="COACH PORTAL" onLogoClick={signOut} />
-            <div style={{ padding: 12, ...dkWrap }}>
+            <div style={{ padding: 12, ...getDkWrap() }}>
                 <div style={{ background: `linear-gradient(135deg,${B.nvD},${B.nv})`, borderRadius: 14, padding: 16, marginBottom: 12, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 140 }}>
                         <div style={{ fontSize: 16, fontWeight: 800, color: B.w, fontFamily: F }}>{sp.name}</div>
@@ -234,15 +241,15 @@ export default function CoachAssessment() {
         const pgN = ["Identity", "Technical", "Tactical/Mental/Physical", "PDI Summary"];
 
         const renderAP = () => {
-            if (cPage === 0) return (<div style={{ padding: "0 12px 16px", ...dkWrap }}>
+            if (cPage === 0) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
                 <SecH title="Batting Archetype" sub="Select the one archetype that best describes this player's batting identity" />
-                <div style={{ display: "grid", gap: 6, ...(_isDesktop ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BAT_ARCH.map(a => (<div key={a.id} onClick={() => cU("batA", a.id)}
+                <div style={{ display: "grid", gap: 6, ...(isDesktop() ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BAT_ARCH.map(a => (<div key={a.id} onClick={() => cU("batA", a.id)}
                     style={{ background: cd.batA === a.id ? B.pkL : B.w, border: `2px solid ${cd.batA === a.id ? a.c : B.g200}`, borderLeft: `4px solid ${a.c}`, borderRadius: 8, padding: 10, cursor: "pointer" }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}</div>
                     <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>{a.sub}</div>
                 </div>))}</div>
                 <SecH title="Bowling Archetype" sub="Select the one archetype that best describes this player's bowling identity" />
-                <div style={{ display: "grid", gap: 6, ...(_isDesktop ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BWL_ARCH.map(a => (<div key={a.id} onClick={() => cU("bwlA", a.id)}
+                <div style={{ display: "grid", gap: 6, ...(isDesktop() ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BWL_ARCH.map(a => (<div key={a.id} onClick={() => cU("bwlA", a.id)}
                     style={{ background: cd.bwlA === a.id ? B.blL : B.w, border: `2px solid ${cd.bwlA === a.id ? a.c : B.g200}`, borderLeft: `4px solid ${a.c}`, borderRadius: 8, padding: 10, cursor: "pointer" }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}</div>
                     <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>{a.sub}</div>
@@ -254,7 +261,7 @@ export default function CoachAssessment() {
                 <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pw_${i}`, cd[`pw_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pw_${PHASES[idx].id}`, v); }} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="pw" />
             </div>);
 
-            if (cPage === 1) return (<div style={{ padding: "0 12px 16px", ...dkWrap }}>
+            if (cPage === 1) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
                 <SecH title={t.pL} sub="Rate 1-5" />
                 <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 10, lineHeight: 1.6 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Standardised Rating Rubric</div>
@@ -272,7 +279,7 @@ export default function CoachAssessment() {
                 <AssGrid items={t.sec} values={cd} onRate={cU} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="t2" />
             </div>);
 
-            if (cPage === 2) return (<div style={{ padding: "0 12px 16px", ...dkWrap }}>
+            if (cPage === 2) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
                 <SecH title="Game Intelligence" />
                 <AssGrid items={IQ_ITEMS} values={cd} onRate={cU} color={B.sky} SKILL_DEFS={COACH_DEFS} keyPrefix="iq" />
                 <SecH title="Mental & Character" sub="Royals Way aligned" />
@@ -292,7 +299,7 @@ export default function CoachAssessment() {
                     { label: "Age", value: ageScore, color: B.prp, icon: "🎂", sub: "vs. age group" },
                     { label: "Overall", value: overallScore, color: B.grn, icon: "⭐", sub: "total average" },
                 ];
-                return (<div style={{ padding: "0 12px 16px", ...dkWrap }}>
+                return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
                     <SecH title="Score Dashboard" sub="Coach-eyes only" />
 
                     {/* CORE SCORES */}
@@ -393,7 +400,7 @@ export default function CoachAssessment() {
         return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
             <Hdr label="COACH PORTAL" onLogoClick={signOut} />
             <SaveToast status={saveStatusHook.status} message={saveStatusHook.message} />
-            {showGuide && <EngineGuide onClose={() => setShowGuide(false)} />}
+            {showGuide && <Suspense fallback={null}><EngineGuide onClose={() => setShowGuide(false)} /></Suspense>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: B.w, borderBottom: `1px solid ${B.g200}` }}>
                 <div style={{ width: 30, height: 30, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <span style={{ color: B.w, fontSize: 11, fontWeight: 800, fontFamily: F }}>{ini}</span>
@@ -406,9 +413,9 @@ export default function CoachAssessment() {
                 <button onClick={() => setCView("survey")} style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: "none", border: `1px solid ${B.bl}`, borderRadius: 4, padding: "3px 6px", cursor: "pointer", fontFamily: F }}>Survey</button>
             </div>
 
-            <div style={{ padding: _isDesktop ? '8px 16px' : '6px 12px', background: B.g50, borderBottom: `1px solid ${B.g200}`, display: "flex", gap: _isDesktop ? 6 : 4, overflowX: "auto", justifyContent: _isDesktop ? 'center' : 'flex-start' }}>
+            <div style={{ padding: isDesktop() ? '8px 16px' : '6px 12px', background: B.g50, borderBottom: `1px solid ${B.g200}`, display: "flex", gap: isDesktop() ? 6 : 4, overflowX: "auto", justifyContent: isDesktop() ? 'center' : 'flex-start' }}>
                 {pgN.map((n, i) => (<button key={i} onClick={() => { setCPage(i); goTop(); }}
-                    style={{ padding: _isDesktop ? '8px 18px' : '5px 10px', borderRadius: 20, border: "none", background: i === cPage ? B.pk : "transparent", color: i === cPage ? B.w : B.g400, fontSize: _isDesktop ? 12 : 10, fontWeight: 700, fontFamily: F, cursor: "pointer", whiteSpace: "nowrap" }}>{n}</button>))}
+                    style={{ padding: isDesktop() ? '8px 18px' : '5px 10px', borderRadius: 20, border: "none", background: i === cPage ? B.pk : "transparent", color: i === cPage ? B.w : B.g400, fontSize: isDesktop() ? 12 : 10, fontWeight: 700, fontFamily: F, cursor: "pointer", whiteSpace: "nowrap" }}>{n}</button>))}
             </div>
 
             <div style={{ paddingBottom: 60 }}>{renderAP()}</div>
@@ -427,7 +434,7 @@ export default function CoachAssessment() {
                     setReportPlayer(sp);
                     await new Promise(r => setTimeout(r, 300));
                     const el = document.getElementById('rra-report-card');
-                    if (el) { try { await generateReportPDF(el, sp.name); } catch (e) { console.error('PDF generation error:', e); } }
+                    if (el) { try { const { generateReportPDF } = await import("./reportGenerator"); await generateReportPDF(el, sp.name); } catch (e) { console.error('PDF generation error:', e); saveStatusHook.setError('PDF generation failed — try again'); } }
                     setReportPlayer(null);
                 }} style={{ padding: '8px 14px', borderRadius: 6, border: `1px solid ${B.bl}`, background: 'transparent', fontSize: 11, fontWeight: 700, color: B.bl, cursor: 'pointer', fontFamily: F }}>📄 Generate Report</button>}
 
@@ -454,14 +461,14 @@ export default function CoachAssessment() {
                     challenge: (rCd.pl_challenge || '').split('\n').filter(Boolean),
                     execute: (rCd.pl_execute || '').split('\n').filter(Boolean),
                 };
-                return <ReportCard player={reportPlayer} assessment={rCd} engine={{
+                return <Suspense fallback={null}><ReportCard player={reportPlayer} assessment={rCd} engine={{
                     overall: rOverall, pathway: rPathway, cohort: rCohort, agePct: rAge,
                     pdi: rDn.pdi, grade: rGrade, domains: rDomains,
                     strengths: rStrengths, growthAreas: rGrowth,
                     sagi: { alignment: rDn.sagiLabel },
                     phaseScores: rPhase, narrative: rCd.narrative,
                     plan: rPlan, squad: rCd.sqRec,
-                }} />;
+                }} /></Suspense>;
             })()}
         </div>);
     }

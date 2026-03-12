@@ -15,10 +15,8 @@ export const LOGO = 'https://res.cloudinary.com/dmktzeitu/image/upload/v17715126
 export const sCard = { background: B.w, borderRadius: 12, padding: 16, border: `1px solid ${B.g200}`, marginBottom: 12 };
 export const sGrad = { background: `linear-gradient(135deg,${B.nvD} 0%,${B.bl} 60%,${B.pk} 100%)` };
 
-// Responsive check — recalculated on access (not cached at module load)
-export const _isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+// Responsive helpers — call these in render for live responsiveness
 export function isDesktop() { return typeof window !== 'undefined' && window.innerWidth >= 768; }
-export const dkWrap = _isDesktop ? { maxWidth: 780, margin: '0 auto', padding: '0 16px' } : {};
 export function getDkWrap() { return isDesktop() ? { maxWidth: 780, margin: '0 auto', padding: '0 16px' } : {}; }
-export const DSZ = _isDesktop ? 32 : 26;
-export const DSF = _isDesktop ? 10 : 9;
+export function getDSZ() { return isDesktop() ? 32 : 26; }
+export function getDSF() { return isDesktop() ? 10 : 9; }
