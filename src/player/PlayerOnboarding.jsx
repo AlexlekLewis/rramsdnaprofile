@@ -8,10 +8,13 @@ import {
     ROLES, BAT_ARCH, BWL_ARCH, VOICE_QS, BAT_POSITIONS,
     BATTING_PHASE_PREFS, BOWLING_PHASE_PREFS, BOWLING_SPEEDS,
     GOTO_SHOTS, PACE_VARIATIONS, SPIN_VARIATIONS, PHASES, PH_MAP,
-    IQ_ITEMS, MN_ITEMS,
+    IQ_ITEMS, MN_ITEMS, FLD_ITEMS,
     BAT_QUESTIONS, BWL_QUESTIONS, BAT_QUESTIONS_JR, BWL_QUESTIONS_JR,
     scoreBatArchetype, scoreBwlArchetype, scoreArchetypeAnswers,
     getCricketAge, JUNIOR_AGE_CUTOFF,
+    BAT_ITEMS_JR, PACE_ITEMS_JR, SPIN_ITEMS_JR, KEEP_ITEMS_JR,
+    IQ_ITEMS_JR, MN_ITEMS_JR, PH_MAP_JR, FLD_ITEMS_JR,
+    JUNIOR_RATING_LABELS, SENIOR_RATING_LABELS,
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
@@ -460,40 +463,176 @@ export default function PlayerOnboarding() {
         if (pStep === 3) {
             const sT = techItems(rid);
             const phItems = PH_MAP[rid] || PH_MAP.batter;
-            return (<div style={sCard}>
-                <SecH title="Self-Assessment" sub="There are no wrong answers here — just rate yourself honestly based on where you feel your game is right now. Tap the ⓘ button next to any item to see what each level means." />
-                <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 10, lineHeight: 1.6 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Rating Guide</div>
-                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>
-                        <strong style={{ color: B.g800 }}>1 = Just Starting</strong> — I'm still learning what this is<br />
-                        <strong style={{ color: B.g800 }}>2 = Developing</strong> — I can do it sometimes, but not every time<br />
-                        <strong style={{ color: B.g800 }}>3 = Solid</strong> — I can do this most of the time<br />
-                        <strong style={{ color: B.g800 }}>4 = Strong</strong> — I do this well, even under pressure<br />
-                        <strong style={{ color: B.g800 }}>5 = Elite</strong> — This is one of the best parts of my game
+            const phItemsJr = PH_MAP_JR[rid] || PH_MAP_JR.batter;
+
+            // Junior tech items by role
+            const jrTech = () => {
+                if (rid === "pace") return { pri: PACE_ITEMS_JR, pL: "Pace Bowling" };
+                if (rid === "spin") return { pri: SPIN_ITEMS_JR, pL: "Spin Bowling" };
+                if (rid === "keeper") return { pri: KEEP_ITEMS_JR, pL: "Wicketkeeping" };
+                if (rid === "allrounder") return { pri: BAT_ITEMS_JR, pL: "Batting" };
+                return { pri: BAT_ITEMS_JR, pL: "Batting" };
+            };
+            const jT = jrTech();
+
+            const rLabels = isJunior ? JUNIOR_RATING_LABELS : SENIOR_RATING_LABELS;
+
+            // ── Domain Card: flat rows with tappable dots ──
+            const DomainCard = ({ title, items, color, keyPrefix, sub }) => {
+                const rated = items.filter((_, i) => (pd[`${keyPrefix}_${i}`] || 0) > 0).length;
+                return (
+                    <div style={{ ...sCard, borderLeft: `3px solid ${color}`, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color, fontFamily: F }}>{title}</div>
+                                {sub && <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 1 }}>{sub}</div>}
+                            </div>
+                            <div style={{ fontSize: 9, fontWeight: 600, color: rated === items.length ? B.grn : B.g400, fontFamily: F, background: rated === items.length ? `${B.grn}12` : B.g100, padding: '3px 8px', borderRadius: 10 }}>
+                                {rated}/{items.length}
+                            </div>
+                        </div>
+                        {/* Rating legend — shown once per card */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 6, paddingRight: 2 }}>
+                            {[1, 2, 3, 4, 5].map(n => (
+                                <div key={n} style={{ width: 32, textAlign: 'center', fontSize: 7, color: B.g400, fontFamily: F, fontWeight: 600 }}>{rLabels[n]}</div>
+                            ))}
+                        </div>
+                        {items.map((item, i) => {
+                            const k = `${keyPrefix}_${i}`;
+                            const v = pd[k] || 0;
+                            return (
+                                <div key={item} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: i < items.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
+                                    <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F, flex: 1, paddingRight: 8 }}>{item}</div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[1, 2, 3, 4, 5].map(n => {
+                                            const sel = v === n;
+                                            return (
+                                                <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
+                                                    width: 32, height: 32, borderRadius: '50%',
+                                                    border: `2px solid ${sel ? color : B.g200}`,
+                                                    background: sel ? color : 'transparent',
+                                                    color: sel ? B.w : B.g400,
+                                                    fontSize: 12, fontWeight: 700, fontFamily: F,
+                                                    cursor: 'pointer', transition: 'all 0.15s',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    padding: 0,
+                                                }}>{n}</button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            };
+
+            return (<div>
+                {/* Intro */}
+                <div style={sCard}>
+                    <SecH title="Self-Assessment" sub={isJunior
+                        ? "Rate yourself honestly \u2014 there are no wrong answers! Just pick the number that feels right for you."
+                        : "Rate yourself honestly based on where your game is right now. There are no wrong answers."
+                    } />
+                    <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                            {[1, 2, 3, 4, 5].map(n => (
+                                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: B.nvD, color: B.w, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F }}>{n}</div>
+                                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F, fontWeight: 600 }}>{rLabels[n]}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: B.pk, fontFamily: F, marginBottom: 6, marginTop: 10 }}>{sT.pL}</div>
-                <AssGrid items={sT.pri} values={pd} onRate={pu} color={B.pk} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_t1" />
-                <div style={{ fontSize: 11, fontWeight: 700, color: B.bl, fontFamily: F, marginBottom: 6, marginTop: 16 }}>Game Intelligence</div>
-                <AssGrid items={IQ_ITEMS} values={pd} onRate={pu} color={B.sky} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_iq" />
-                <div style={{ fontSize: 11, fontWeight: 700, color: B.prp, fontFamily: F, marginBottom: 6, marginTop: 16 }}>Mental & Character</div>
-                <AssGrid items={MN_ITEMS} values={pd} onRate={pu} color={B.prp} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_mn" />
 
-                {/* ═══ PHYSICAL SELF-ASSESSMENT (v2) ═══ */}
-                <div style={{ borderTop: `2px solid ${B.g200}`, marginTop: 16, paddingTop: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: B.org, fontFamily: F, marginBottom: 6 }}>Physical & Athletic</div>
-                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 6 }}>How would you rate your physical capabilities?</div>
-                    <AssGrid items={phItems} values={pd} onRate={pu} color={B.org} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_ph" />
-                </div>
+                {/* Domain cards */}
+                <DomainCard
+                    title={isJunior ? jT.pL : sT.pL}
+                    items={isJunior ? jT.pri : sT.pri}
+                    color={B.pk}
+                    keyPrefix="sr_t1"
+                />
+                <DomainCard
+                    title="Game Intelligence"
+                    sub={isJunior ? "How well do you read and understand the game?" : undefined}
+                    items={isJunior ? IQ_ITEMS_JR : IQ_ITEMS}
+                    color={B.sky}
+                    keyPrefix="sr_iq"
+                />
+                <DomainCard
+                    title="Mental & Character"
+                    sub={isJunior ? "How you handle the tough moments" : undefined}
+                    items={isJunior ? MN_ITEMS_JR : MN_ITEMS}
+                    color={B.prp}
+                    keyPrefix="sr_mn"
+                />
+                <DomainCard
+                    title="Physical & Athletic"
+                    sub={isJunior ? "How your body helps your game" : undefined}
+                    items={isJunior ? phItemsJr : phItems}
+                    color={B.org}
+                    keyPrefix="sr_ph"
+                />
+                <DomainCard
+                    title={isJunior ? "Fielding" : "Athletic Fielding"}
+                    items={isJunior ? FLD_ITEMS_JR : FLD_ITEMS}
+                    color={B.grn}
+                    keyPrefix="sr_fld"
+                />
 
-                {/* ═══ PHASE SELF-ASSESSMENT (v2) ═══ */}
-                <div style={{ borderTop: `2px solid ${B.g200}`, marginTop: 16, paddingTop: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: B.grn, fontFamily: F, marginBottom: 6 }}>Phase Effectiveness</div>
-                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 6 }}>Rate your effectiveness in each phase of the game (1-5)</div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F, marginTop: 8, marginBottom: 4 }}>Batting</div>
-                    <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`sr_pb_${i}`, pd[`sr_pb_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); pu(`sr_pb_${PHASES[idx].id}`, v); }} color={B.pk} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_pb" />
-                    {hasBowling && <><div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F, marginTop: 8, marginBottom: 4 }}>Bowling</div>
-                        <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`sr_pw_${i}`, pd[`sr_pw_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); pu(`sr_pw_${PHASES[idx].id}`, v); }} color={B.bl} SKILL_DEFS={PLAYER_DEFS} keyPrefix="sr_pw" /></>}
+                {/* Phase effectiveness */}
+                <div style={{ ...sCard, borderLeft: `3px solid ${B.nv}`, marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nv, fontFamily: F, marginBottom: 6 }}>Phase Effectiveness</div>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 8 }}>{isJunior ? "How well do you play in each part of the game?" : "Rate your effectiveness in each phase"}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F, marginBottom: 4 }}>Batting</div>
+                    {PHASES.map((p, i) => {
+                        const k = `sr_pb_${p.id}`;
+                        const v = pd[k] || 0;
+                        return (
+                            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < PHASES.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
+                                <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F }}>{p.nm}</div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[1, 2, 3, 4, 5].map(n => (
+                                        <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
+                                            width: 32, height: 32, borderRadius: '50%',
+                                            border: `2px solid ${n === v ? B.pk : B.g200}`,
+                                            background: n === v ? B.pk : 'transparent',
+                                            color: n === v ? B.w : B.g400,
+                                            fontSize: 12, fontWeight: 700, fontFamily: F,
+                                            cursor: 'pointer', transition: 'all 0.15s',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                                        }}>{n}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {hasBowling && <>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F, marginTop: 10, marginBottom: 4 }}>Bowling</div>
+                        {PHASES.map((p, i) => {
+                            const k = `sr_pw_${p.id}`;
+                            const v = pd[k] || 0;
+                            return (
+                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < PHASES.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
+                                    <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F }}>{p.nm}</div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[1, 2, 3, 4, 5].map(n => (
+                                            <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
+                                                width: 32, height: 32, borderRadius: '50%',
+                                                border: `2px solid ${n === v ? B.bl : B.g200}`,
+                                                background: n === v ? B.bl : 'transparent',
+                                                color: n === v ? B.w : B.g400,
+                                                fontSize: 12, fontWeight: 700, fontFamily: F,
+                                                cursor: 'pointer', transition: 'all 0.15s',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                                            }}>{n}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </>}
                 </div>
             </div>);
         }

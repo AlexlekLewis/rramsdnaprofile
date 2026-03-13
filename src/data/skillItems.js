@@ -47,6 +47,29 @@ export const PH_MAP = {
     allrounder: ["Explosive Power", "Bowling Athleticism", "Core Balance", "Aerobic Fitness", "General Movement"],
 };
 
+// ═══ JUNIOR SELF-ASSESSMENT ITEMS (U14) ═══
+// Broader, simpler items that map to the same key prefix system.
+// Fewer items per domain — domain averages still valid for SAGI.
+
+export const BAT_ITEMS_JR = ["My Batting Technique", "Hitting Boundaries", "Playing Against Spin", "Playing Against Fast Bowling", "Running & Finding Gaps"];
+export const PACE_ITEMS_JR = ["My Bowling Action", "Bowling Accuracy", "My Variations", "Bowling Fast & Using Bounce", "Bowling Smart"];
+export const SPIN_ITEMS_JR = ["My Bowling Action", "Spinning the Ball", "My Variations", "Bowling Accuracy", "Reading the Batter"];
+export const KEEP_ITEMS_JR = ["Keeping to Fast Bowling", "Keeping to Spin", "Catching & Glove Work", "Throwing & Moving"];
+export const IQ_ITEMS_JR = ["Reading the Game", "Making Smart Decisions", "Knowing What\u2019s Happening Around Me"];
+export const MN_ITEMS_JR = ["Handling Pressure", "Bouncing Back After a Bad Moment", "Listening to My Coach", "Being Competitive"];
+export const PH_MAP_JR = {
+    pace: ["Speed & Power", "Strength", "Fitness"],
+    spin: ["Flexibility", "Balance", "Fitness"],
+    keeper: ["Agility", "Hand-Eye Coordination", "Fitness"],
+    batter: ["Speed & Agility", "Power & Strength", "Fitness"],
+    allrounder: ["Speed & Power", "Balance", "Fitness"],
+};
+export const FLD_ITEMS_JR = ["Fielding", "Catching", "Throwing"];
+
+// Junior rating labels (simpler than senior)
+export const JUNIOR_RATING_LABELS = { 1: "Not yet", 2: "Learning", 3: "Getting there", 4: "Good", 5: "Really good" };
+export const SENIOR_RATING_LABELS = { 1: "Just starting", 2: "Developing", 3: "Solid", 4: "Strong", 5: "Elite" };
+
 // ═══ 8-PILLAR: NEW ITEMS ═══
 // TRAP 1: Existing items MUST NOT be reordered or removed. New items appended only.
 
