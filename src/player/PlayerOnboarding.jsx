@@ -15,6 +15,8 @@ import {
     BAT_ITEMS_JR, PACE_ITEMS_JR, SPIN_ITEMS_JR, KEEP_ITEMS_JR,
     IQ_ITEMS_JR, MN_ITEMS_JR, PH_MAP_JR, FLD_ITEMS_JR,
     JUNIOR_RATING_LABELS, SENIOR_RATING_LABELS,
+    CONFIDENCE_SCALE, FREQUENCY_SCALE, CONFIDENCE_SCALE_JR, FREQUENCY_SCALE_JR,
+    BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS,
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
@@ -461,179 +463,122 @@ export default function PlayerOnboarding() {
         }
 
         if (pStep === 3) {
-            const sT = techItems(rid);
-            const phItems = PH_MAP[rid] || PH_MAP.batter;
-            const phItemsJr = PH_MAP_JR[rid] || PH_MAP_JR.batter;
+            const confScale = isJunior ? CONFIDENCE_SCALE_JR : CONFIDENCE_SCALE;
+            const freqScale = isJunior ? FREQUENCY_SCALE_JR : FREQUENCY_SCALE;
 
-            // Junior tech items by role
-            const jrTech = () => {
-                if (rid === "pace") return { pri: PACE_ITEMS_JR, pL: "Pace Bowling" };
-                if (rid === "spin") return { pri: SPIN_ITEMS_JR, pL: "Spin Bowling" };
-                if (rid === "keeper") return { pri: KEEP_ITEMS_JR, pL: "Wicketkeeping" };
-                if (rid === "allrounder") return { pri: BAT_ITEMS_JR, pL: "Batting" };
-                return { pri: BAT_ITEMS_JR, pL: "Batting" };
-            };
-            const jT = jrTech();
+            // ── Match-Up Row: confidence + frequency for one scenario ──
+            const MatchUpRow = ({ matchup, domain, idx, confColor, freqColor }) => {
+                const ck = `sr_mc_${domain}_${idx}_c`;
+                const fk = `sr_mc_${domain}_${idx}_f`;
+                const cv = pd[ck] || 0;
+                const fv = pd[fk] || 0;
+                const confText = isJunior ? matchup.confJr : matchup.conf;
+                const freqText = isJunior ? matchup.freqJr : matchup.freq;
+                const done = cv > 0 && fv > 0;
 
-            const rLabels = isJunior ? JUNIOR_RATING_LABELS : SENIOR_RATING_LABELS;
-
-            // ── Domain Card: flat rows with tappable dots ──
-            const DomainCard = ({ title, items, color, keyPrefix, sub }) => {
-                const rated = items.filter((_, i) => (pd[`${keyPrefix}_${i}`] || 0) > 0).length;
                 return (
-                    <div style={{ ...sCard, borderLeft: `3px solid ${color}`, marginBottom: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ padding: '12px 0', borderBottom: `1px solid ${B.g100}` }}>
+                        {/* Confidence */}
+                        <div style={{ marginBottom: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+                                <div style={{ width: 18, height: 18, borderRadius: '50%', background: cv > 0 ? confColor : B.g200, color: cv > 0 ? B.w : B.g400, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{cv > 0 ? '✓' : '—'}</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: B.g800, fontFamily: F, lineHeight: 1.4 }}>{confText}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 3, marginLeft: 24 }}>
+                                {confScale.map((label, n) => {
+                                    const val = n + 1;
+                                    const sel = cv === val;
+                                    return (
+                                        <button key={n} onClick={() => pu(ck, cv === val ? 0 : val)} style={{
+                                            flex: 1, padding: '8px 2px', borderRadius: 8,
+                                            border: `1.5px solid ${sel ? confColor : B.g200}`,
+                                            background: sel ? `${confColor}15` : B.w,
+                                            cursor: 'pointer', transition: 'all 0.15s',
+                                        }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: sel ? confColor : B.g400, fontFamily: F, textAlign: 'center' }}>{val}</div>
+                                            <div style={{ fontSize: 7, fontWeight: 600, color: sel ? confColor : B.g400, fontFamily: F, textAlign: 'center', marginTop: 1, lineHeight: 1.1 }}>{label}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        {/* Frequency */}
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+                                <div style={{ width: 18, height: 18, borderRadius: '50%', background: fv > 0 ? freqColor : B.g200, color: fv > 0 ? B.w : B.g400, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{fv > 0 ? '✓' : '—'}</div>
+                                <div style={{ fontSize: 11, fontWeight: 500, color: B.g600, fontFamily: F, lineHeight: 1.4, fontStyle: 'italic' }}>{freqText}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 3, marginLeft: 24 }}>
+                                {freqScale.map((label, n) => {
+                                    const val = n + 1;
+                                    const sel = fv === val;
+                                    return (
+                                        <button key={n} onClick={() => pu(fk, fv === val ? 0 : val)} style={{
+                                            flex: 1, padding: '8px 2px', borderRadius: 8,
+                                            border: `1.5px solid ${sel ? freqColor : B.g200}`,
+                                            background: sel ? `${freqColor}15` : B.w,
+                                            cursor: 'pointer', transition: 'all 0.15s',
+                                        }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: sel ? freqColor : B.g400, fontFamily: F, textAlign: 'center' }}>{val}</div>
+                                            <div style={{ fontSize: 7, fontWeight: 600, color: sel ? freqColor : B.g400, fontFamily: F, textAlign: 'center', marginTop: 1, lineHeight: 1.1 }}>{label}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // ── Domain Card wrapper ──
+            const MatchUpCard = ({ title, sub, matchups, domain, confColor, freqColor }) => {
+                const total = matchups.length * 2;
+                const done = matchups.reduce((s, _, i) => {
+                    if (pd[`sr_mc_${domain}_${i}_c`] > 0) s++;
+                    if (pd[`sr_mc_${domain}_${i}_f`] > 0) s++;
+                    return s;
+                }, 0);
+                return (
+                    <div style={{ ...sCard, borderLeft: `3px solid ${confColor}`, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                             <div>
-                                <div style={{ fontSize: 12, fontWeight: 700, color, fontFamily: F }}>{title}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: confColor, fontFamily: F }}>{title}</div>
                                 {sub && <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 1 }}>{sub}</div>}
                             </div>
-                            <div style={{ fontSize: 9, fontWeight: 600, color: rated === items.length ? B.grn : B.g400, fontFamily: F, background: rated === items.length ? `${B.grn}12` : B.g100, padding: '3px 8px', borderRadius: 10 }}>
-                                {rated}/{items.length}
+                            <div style={{ fontSize: 9, fontWeight: 600, color: done === total ? B.grn : B.g400, fontFamily: F, background: done === total ? `${B.grn}12` : B.g100, padding: '3px 8px', borderRadius: 10 }}>
+                                {done}/{total}
                             </div>
                         </div>
-                        {/* Rating legend — shown once per card */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 6, paddingRight: 2 }}>
-                            {[1, 2, 3, 4, 5].map(n => (
-                                <div key={n} style={{ width: 32, textAlign: 'center', fontSize: 7, color: B.g400, fontFamily: F, fontWeight: 600 }}>{rLabels[n]}</div>
-                            ))}
-                        </div>
-                        {items.map((item, i) => {
-                            const k = `${keyPrefix}_${i}`;
-                            const v = pd[k] || 0;
-                            return (
-                                <div key={item} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: i < items.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
-                                    <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F, flex: 1, paddingRight: 8 }}>{item}</div>
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                        {[1, 2, 3, 4, 5].map(n => {
-                                            const sel = v === n;
-                                            return (
-                                                <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
-                                                    width: 32, height: 32, borderRadius: '50%',
-                                                    border: `2px solid ${sel ? color : B.g200}`,
-                                                    background: sel ? color : 'transparent',
-                                                    color: sel ? B.w : B.g400,
-                                                    fontSize: 12, fontWeight: 700, fontFamily: F,
-                                                    cursor: 'pointer', transition: 'all 0.15s',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    padding: 0,
-                                                }}>{n}</button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                        {matchups.map((m, i) => (
+                            <MatchUpRow key={m.id} matchup={m} domain={domain} idx={i} confColor={confColor} freqColor={freqColor} />
+                        ))}
                     </div>
                 );
             };
 
             return (<div>
-                {/* Intro */}
                 <div style={sCard}>
                     <SecH title="Self-Assessment" sub={isJunior
-                        ? "Rate yourself honestly \u2014 there are no wrong answers! Just pick the number that feels right for you."
-                        : "Rate yourself honestly based on where your game is right now. There are no wrong answers."
+                        ? "For each statement, tell us how confident you feel and how often you pull it off. There are no wrong answers!"
+                        : "For each scenario, rate your confidence and how often you execute. Be honest \u2014 this helps your coaches understand where you are right now."
                     } />
-                    <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 6 }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
-                            {[1, 2, 3, 4, 5].map(n => (
-                                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: B.nvD, color: B.w, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F }}>{n}</div>
-                                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F, fontWeight: 600 }}>{rLabels[n]}</div>
-                                </div>
-                            ))}
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', background: B.g100, borderRadius: 8, padding: '8px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: B.pk }} />
+                            <div style={{ fontSize: 10, color: B.g600, fontFamily: F, fontWeight: 600 }}>Confidence \u2014 "I back myself"</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: B.bl }} />
+                            <div style={{ fontSize: 10, color: B.g600, fontFamily: F, fontWeight: 600 }}>Frequency \u2014 "I pull it off"</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Domain cards */}
-                <DomainCard
-                    title={isJunior ? jT.pL : sT.pL}
-                    items={isJunior ? jT.pri : sT.pri}
-                    color={B.pk}
-                    keyPrefix="sr_t1"
-                />
-                <DomainCard
-                    title="Game Intelligence"
-                    sub={isJunior ? "How well do you read and understand the game?" : undefined}
-                    items={isJunior ? IQ_ITEMS_JR : IQ_ITEMS}
-                    color={B.sky}
-                    keyPrefix="sr_iq"
-                />
-                <DomainCard
-                    title="Mental & Character"
-                    sub={isJunior ? "How you handle the tough moments" : undefined}
-                    items={isJunior ? MN_ITEMS_JR : MN_ITEMS}
-                    color={B.prp}
-                    keyPrefix="sr_mn"
-                />
-                <DomainCard
-                    title="Physical & Athletic"
-                    sub={isJunior ? "How your body helps your game" : undefined}
-                    items={isJunior ? phItemsJr : phItems}
-                    color={B.org}
-                    keyPrefix="sr_ph"
-                />
-                <DomainCard
-                    title={isJunior ? "Fielding" : "Athletic Fielding"}
-                    items={isJunior ? FLD_ITEMS_JR : FLD_ITEMS}
-                    color={B.grn}
-                    keyPrefix="sr_fld"
-                />
+                <MatchUpCard title="Batting" sub={isJunior ? "How you feel and perform with the bat" : "Your confidence and execution with the bat"} matchups={BAT_MATCHUPS} domain="bat" confColor={B.pk} freqColor={B.bl} />
 
-                {/* Phase effectiveness */}
-                <div style={{ ...sCard, borderLeft: `3px solid ${B.nv}`, marginBottom: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nv, fontFamily: F, marginBottom: 6 }}>Phase Effectiveness</div>
-                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 8 }}>{isJunior ? "How well do you play in each part of the game?" : "Rate your effectiveness in each phase"}</div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F, marginBottom: 4 }}>Batting</div>
-                    {PHASES.map((p, i) => {
-                        const k = `sr_pb_${p.id}`;
-                        const v = pd[k] || 0;
-                        return (
-                            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < PHASES.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
-                                <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F }}>{p.nm}</div>
-                                <div style={{ display: 'flex', gap: 4 }}>
-                                    {[1, 2, 3, 4, 5].map(n => (
-                                        <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
-                                            width: 32, height: 32, borderRadius: '50%',
-                                            border: `2px solid ${n === v ? B.pk : B.g200}`,
-                                            background: n === v ? B.pk : 'transparent',
-                                            color: n === v ? B.w : B.g400,
-                                            fontSize: 12, fontWeight: 700, fontFamily: F,
-                                            cursor: 'pointer', transition: 'all 0.15s',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                        }}>{n}</button>
-                                    ))}
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {hasBowling && <>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F, marginTop: 10, marginBottom: 4 }}>Bowling</div>
-                        {PHASES.map((p, i) => {
-                            const k = `sr_pw_${p.id}`;
-                            const v = pd[k] || 0;
-                            return (
-                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < PHASES.length - 1 ? `1px solid ${B.g100}` : 'none' }}>
-                                    <div style={{ fontSize: 11, fontWeight: v > 0 ? 600 : 500, color: v > 0 ? B.g800 : B.g600, fontFamily: F }}>{p.nm}</div>
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                        {[1, 2, 3, 4, 5].map(n => (
-                                            <button key={n} onClick={() => pu(k, v === n ? 0 : n)} style={{
-                                                width: 32, height: 32, borderRadius: '50%',
-                                                border: `2px solid ${n === v ? B.bl : B.g200}`,
-                                                background: n === v ? B.bl : 'transparent',
-                                                color: n === v ? B.w : B.g400,
-                                                fontSize: 12, fontWeight: 700, fontFamily: F,
-                                                cursor: 'pointer', transition: 'all 0.15s',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                            }}>{n}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </>}
-                </div>
+                {hasBowling && <MatchUpCard title="Bowling" sub={isJunior ? "How you feel and perform with the ball" : "Your confidence and execution with the ball"} matchups={BWL_MATCHUPS} domain="bwl" confColor={B.sky} freqColor={B.nv} />}
+
+                <MatchUpCard title="Mental & Character" sub={isJunior ? "How you handle the tough stuff" : "Your mindset and approach"} matchups={MENTAL_MATCHUPS} domain="mnt" confColor={B.prp} freqColor={B.org} />
             </div>);
         }
 

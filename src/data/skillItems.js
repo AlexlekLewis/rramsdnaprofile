@@ -70,6 +70,133 @@ export const FLD_ITEMS_JR = ["Fielding", "Catching", "Throwing"];
 export const JUNIOR_RATING_LABELS = { 1: "Not yet", 2: "Learning", 3: "Getting there", 4: "Good", 5: "Really good" };
 export const SENIOR_RATING_LABELS = { 1: "Just starting", 2: "Developing", 3: "Solid", 4: "Strong", 5: "Elite" };
 
+// ═══ MATCH-UP CONFIDENCE PROFILE ═══
+// Replaces technical self-assessment for all ages.
+// Each match-up has a confidence statement + frequency statement.
+// Stored as sr_mc_[domain]_[idx]_c (confidence) and sr_mc_[domain]_[idx]_f (frequency)
+
+export const CONFIDENCE_SCALE = ["Not at all", "A little", "Mostly", "Yes", "Absolutely"];
+export const FREQUENCY_SCALE = ["Rarely", "Sometimes", "Often", "Most of the time", "Nearly always"];
+export const CONFIDENCE_SCALE_JR = ["No", "A little bit", "Kind of", "Yes", "Definitely"];
+export const FREQUENCY_SCALE_JR = ["Hardly ever", "Sometimes", "A fair bit", "Most of the time", "Almost always"];
+
+export const BAT_MATCHUPS = [
+    { id: "vs_pace",
+      conf: "I back myself to score against fast bowling",
+      confJr: "I feel good batting against fast bowlers",
+      freq: "When I face fast bowling, I score runs...",
+      freqJr: "When someone bowls fast at me, I score runs...",
+    },
+    { id: "vs_spin",
+      conf: "I'm confident playing against spin bowling",
+      confJr: "I feel good batting against spin bowlers",
+      freq: "When I face spin, I find ways to score...",
+      freqJr: "When someone bowls spin at me, I score runs...",
+    },
+    { id: "boundaries",
+      conf: "I back myself to hit a boundary when I want to",
+      confJr: "I can hit the ball to the fence when I try",
+      freq: "When I go for a big shot, I get it right...",
+      freqJr: "When I try to hit a boundary, it works...",
+    },
+    { id: "rotation",
+      conf: "I can find gaps and keep the scoreboard moving when boundaries are hard to come by",
+      confJr: "I can find gaps and run quick when I can't hit a boundary",
+      freq: "When the field is spread, I find ways to score singles and twos...",
+      freqJr: "When I can't hit a four, I find ways to still score...",
+    },
+    { id: "pressure",
+      conf: "I stay confident when my team is under scoreboard pressure",
+      confJr: "I feel okay batting when my team really needs runs",
+      freq: "When the game is tight, I make good decisions...",
+      freqJr: "When the game is really close, I play well...",
+    },
+    { id: "pp_batting",
+      conf: "I'm confident scoring in the powerplay with the field up",
+      confJr: "I feel good batting at the start when fielders are close",
+      freq: "In the powerplay, I take advantage of the field restrictions...",
+      freqJr: "At the start of the innings, I score well...",
+    },
+    { id: "death_batting",
+      conf: "I back myself to score quickly in the last few overs",
+      confJr: "I can score fast at the end of the innings",
+      freq: "In the death overs, I hit the runs my team needs...",
+      freqJr: "At the end of the innings, I score the runs we need...",
+    },
+];
+
+export const BWL_MATCHUPS = [
+    { id: "vs_aggressor",
+      conf: "I stay confident when a batter is attacking me",
+      confJr: "I feel okay when a batter is trying to hit me everywhere",
+      freq: "When a batter attacks me, I still bowl well...",
+      freqJr: "When a batter tries to hit me, I still bowl well...",
+    },
+    { id: "vs_defender",
+      conf: "I can create chances against batters who are blocking and defending",
+      confJr: "I can get batters out even when they're blocking",
+      freq: "Against defensive batters, I find a way to create chances...",
+      freqJr: "When a batter keeps blocking, I find a way to get them out...",
+    },
+    { id: "pressure_bowl",
+      conf: "I back myself to bowl well when the game is on the line",
+      confJr: "I feel good bowling when the game is really close",
+      freq: "Under pressure, I execute my plans...",
+      freqJr: "When the game is close, I bowl well...",
+    },
+    { id: "variations",
+      conf: "I'm confident landing my variations when I need them",
+      confJr: "I can bowl my different deliveries when I need to",
+      freq: "When I bowl a variation, it comes out how I want it...",
+      freqJr: "When I try a different delivery, it works...",
+    },
+    { id: "to_plan",
+      conf: "I can bowl to a plan and hit the areas I'm aiming for",
+      confJr: "I can bowl where I want the ball to go",
+      freq: "When I have a plan, I execute it...",
+      freqJr: "When I aim for a spot, I hit it...",
+    },
+    { id: "death_bowl",
+      conf: "I'm confident bowling at the death when batters are trying to hit boundaries",
+      confJr: "I feel okay bowling at the end when batters are trying to smash it",
+      freq: "In the last few overs, I limit the damage and keep my cool...",
+      freqJr: "At the end of the innings, I bowl well and stay calm...",
+    },
+];
+
+export const MENTAL_MATCHUPS = [
+    { id: "pressure_moments",
+      conf: "I handle pressure well — big moments don't overwhelm me",
+      confJr: "I stay calm when the pressure is on",
+      freq: "In pressure moments, I make good decisions...",
+      freqJr: "When the pressure is on, I do the right thing...",
+    },
+    { id: "bounce_back",
+      conf: "I bounce back quickly after a bad moment — dropped catch, getting out cheaply, getting hit",
+      confJr: "I get over it quickly when something goes wrong",
+      freq: "After a setback, I refocus and perform well...",
+      freqJr: "After a bad moment, I bounce back and play well...",
+    },
+    { id: "focus",
+      conf: "I stay focused and switched on for the whole game, even when I'm not batting or bowling",
+      confJr: "I stay focused and pay attention for the whole game",
+      freq: "I maintain concentration through the entire match...",
+      freqJr: "I stay switched on for the whole game...",
+    },
+    { id: "coachable",
+      conf: "I listen to feedback and actively try to improve the things my coach suggests",
+      confJr: "I listen to my coach and try to get better at what they suggest",
+      freq: "When my coach gives me something to work on, I put it into practice...",
+      freqJr: "When my coach tells me to try something, I give it a real go...",
+    },
+    { id: "teammate",
+      conf: "I'm a good teammate — I support others and communicate well on the field",
+      confJr: "I encourage my teammates and talk to them on the field",
+      freq: "I support my teammates and communicate during games...",
+      freqJr: "I cheer my teammates on and help them out...",
+    },
+];
+
 // ═══ 8-PILLAR: NEW ITEMS ═══
 // TRAP 1: Existing items MUST NOT be reordered or removed. New items appended only.
 
