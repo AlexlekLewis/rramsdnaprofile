@@ -368,8 +368,15 @@ export default function PlayerOnboarding() {
                     </div>
                 </div>
 
+                {/* ═══ PROMPT TO SELECT ROLE ═══ */}
+                {!pd.role && <div style={{ ...sCard, borderLeft: `3px solid ${B.g300}`, textAlign: 'center', padding: '24px 16px' }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>👆</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Select your Primary Role above</div>
+                    <div style={{ fontSize: 10, color: B.g500, fontFamily: F }}>Once you choose your role, we'll show you questions tailored to your game.</div>
+                </div>}
+
                 {/* ═══ BATTING IDENTITY ═══ */}
-                <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
+                {pd.role && <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
                     <SecH title="Your Batting Game" sub="Help us understand your batting style and strengths" />
                     <div style={{ flex: 1, minWidth: 130, marginBottom: 8 }}>
                         <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginBottom: 1 }}>Batting Position</div>
@@ -396,14 +403,14 @@ export default function PlayerOnboarding() {
                             <Dots value={pd.shortBallComfort} onChange={v => pu('shortBallComfort', v)} color={B.pk} />
                         </div>
                     </div>
-                </div>
+                </div>}
 
                 {/* ═══ BATTING ARCHETYPE QUESTIONNAIRE ═══ */}
-                <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
+                {pd.role && <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
                     <SecH title="Find Your Batting DNA" sub="Answer these questions honestly — there are no wrong answers. We'll work out your batting identity from your responses." />
                     <ArchQ questions={BAT_QUESTIONS} answers={pd.batArchAnswers} onAnswer={v => { pu('batArchAnswers', v); pu('_batArchComputed', false); }} color={B.pk} label="BATTING" />
                     <ArchReveal answers={pd.batArchAnswers} scoreFn={scoreBatArchetype} archList={BAT_ARCH} color={B.pk} />
-                </div>
+                </div>}
 
                 {/* ═══ BOWLING IDENTITY (only if role includes bowling) ═══ */}
                 {hasBowling && <div style={{ ...sCard, borderLeft: `3px solid ${B.bl}` }}>
