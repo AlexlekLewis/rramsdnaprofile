@@ -8,7 +8,7 @@ import { useEngine } from "../context/EngineContext";
 
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
-import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH } from "../data/skillItems";
+import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB } from "../db/playerDb";
 import { MOCK } from "../data/mockPlayers";
@@ -240,18 +240,121 @@ export default function CoachAssessment() {
         const dn = calcPDI({ ...cd, _dob: sp.dob }, sp.self_ratings, sp.role, ccmR, dbWeights, engineConst, sp.grades, {}, sp.topBat, sp.topBowl, compTiers);
         const pgN = ["Identity", "Technical", "Tactical/Mental/Physical", "PDI Summary"];
 
+        const hasBowling = ['pace', 'spin', 'allrounder'].includes(sp.role);
+        const sr = sp.self_ratings || {};
+        const hasMC = Object.keys(sr).some(k => k.startsWith('mc_'));
+
+        // ── Confidence dot color helper ──
+        const confDotColor = (v) => {
+            if (!v || v === 0) return B.g200;
+            if (v <= 2) return '#EF5350';
+            if (v === 3) return B.org;
+            return B.grn;
+        };
+
+        // ── Player Confidence Context Card ──
+        const ConfidenceContext = ({ matchups, domain, title, color }) => {
+            const hasData = matchups.some((_, i) => sr[`mc_${domain}_${i}_c`] > 0);
+            if (!hasData) return null;
+            return (
+                <div style={{ background: `${color}06`, border: `1px solid ${color}20`, borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-VIEW: {title}</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>C = Confidence</div>
+                            <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>F = Frequency</div>
+                        </div>
+                    </div>
+                    {matchups.map((m, i) => {
+                        const cv = sr[`mc_${domain}_${i}_c`] || 0;
+                        const fv = sr[`mc_${domain}_${i}_f`] || 0;
+                        if (cv === 0 && fv === 0) return null;
+                        const gap = cv > 0 && fv > 0 ? cv - fv : null;
+                        return (
+                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: i < matchups.length - 1 ? `1px solid ${color}10` : 'none' }}>
+                                <div style={{ flex: 1, fontSize: 10, color: B.g700, fontFamily: F, lineHeight: 1.3 }}>{m.conf}</div>
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                                    <div title={`Confidence: ${cv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', background: confDotColor(cv), color: B.w, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F }}>{cv || '—'}</div>
+                                    <div title={`Frequency: ${fv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${confDotColor(fv)}`, color: confDotColor(fv), fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: 'transparent' }}>{fv || '—'}</div>
+                                    {gap !== null && Math.abs(gap) >= 2 && <div style={{ fontSize: 8, fontWeight: 700, color: gap > 0 ? '#EF5350' : B.sky, fontFamily: F, minWidth: 14, textAlign: 'center' }}>{gap > 0 ? `+${gap}` : gap}</div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        // ── Combined confidence summary for top of assessment ──
+        const ConfidenceSummary = () => {
+            if (!hasMC) return null;
+            // Calculate overall confidence vs frequency gap
+            let confSum = 0, confN = 0, freqSum = 0, freqN = 0;
+            const allDomains = [
+                { matchups: BAT_MATCHUPS, domain: 'bat' },
+                ...(hasBowling ? [{ matchups: BWL_MATCHUPS, domain: 'bwl' }] : []),
+                { matchups: MENTAL_MATCHUPS, domain: 'mnt' },
+            ];
+            allDomains.forEach(({ matchups, domain }) => {
+                matchups.forEach((_, i) => {
+                    const cv = sr[`mc_${domain}_${i}_c`] || 0;
+                    const fv = sr[`mc_${domain}_${i}_f`] || 0;
+                    if (cv > 0) { confSum += cv; confN++; }
+                    if (fv > 0) { freqSum += fv; freqN++; }
+                });
+            });
+            const confAvg = confN > 0 ? (confSum / confN).toFixed(1) : '—';
+            const freqAvg = freqN > 0 ? (freqSum / freqN).toFixed(1) : '—';
+            const gap = confN > 0 && freqN > 0 ? ((confSum / confN) - (freqSum / freqN)).toFixed(1) : null;
+            let sagiLabel = 'Insufficient data';
+            let sagiColor = B.g400;
+            if (gap !== null) {
+                const g = parseFloat(gap);
+                if (g > 0.5) { sagiLabel = 'Over-estimates'; sagiColor = '#EF5350'; }
+                else if (g < -0.5) { sagiLabel = 'Under-estimates'; sagiColor = B.sky; }
+                else { sagiLabel = 'Self-aware'; sagiColor = B.grn; }
+            }
+
+            return (
+                <div style={{ background: B.nvD, borderRadius: 10, padding: '12px 14px', marginBottom: 10, color: B.w }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F, letterSpacing: 1.5, marginBottom: 8 }}>PLAYER SELF-PERCEPTION</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', gap: 8 }}>
+                        <div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{confAvg}</div>
+                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Confidence</div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{freqAvg}</div>
+                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Frequency</div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 22, fontWeight: 800, color: sagiColor, fontFamily: F }}>{gap !== null ? (parseFloat(gap) > 0 ? `+${gap}` : gap) : '—'}</div>
+                            <div style={{ fontSize: 8, color: sagiColor, fontFamily: F, fontWeight: 600 }}>{sagiLabel}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const renderAP = () => {
             if (cPage === 0) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
+                <ConfidenceSummary />
                 <SecH title="Batting Archetype" sub="Select the one archetype that best describes this player's batting identity" />
+                {sp.playerBatArch && <div style={{ background: `${B.pk}08`, border: `1px solid ${B.pk}30`, borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: B.pk, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-ID: {BAT_ARCH.find(a => a.id === sp.playerBatArch)?.nm || sp.playerBatArch}{sp.playerBatArchSecondary ? ` + ${BAT_ARCH.find(a => a.id === sp.playerBatArchSecondary)?.nm || sp.playerBatArchSecondary}` : ''}</div>
+                </div>}
                 <div style={{ display: "grid", gap: 6, ...(isDesktop() ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BAT_ARCH.map(a => (<div key={a.id} onClick={() => cU("batA", a.id)}
                     style={{ background: cd.batA === a.id ? B.pkL : B.w, border: `2px solid ${cd.batA === a.id ? a.c : B.g200}`, borderLeft: `4px solid ${a.c}`, borderRadius: 8, padding: 10, cursor: "pointer" }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}{sp.playerBatArch === a.id ? ' 👤' : ''}</div>
                     <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>{a.sub}</div>
                 </div>))}</div>
                 <SecH title="Bowling Archetype" sub="Select the one archetype that best describes this player's bowling identity" />
+                {sp.playerBwlArch && <div style={{ background: `${B.bl}08`, border: `1px solid ${B.bl}30`, borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: B.bl, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-ID: {BWL_ARCH.find(a => a.id === sp.playerBwlArch)?.nm || sp.playerBwlArch}{sp.playerBwlArchSecondary ? ` + ${BWL_ARCH.find(a => a.id === sp.playerBwlArchSecondary)?.nm || sp.playerBwlArchSecondary}` : ''}</div>
+                </div>}
                 <div style={{ display: "grid", gap: 6, ...(isDesktop() ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>{BWL_ARCH.map(a => (<div key={a.id} onClick={() => cU("bwlA", a.id)}
                     style={{ background: cd.bwlA === a.id ? B.blL : B.w, border: `2px solid ${cd.bwlA === a.id ? a.c : B.g200}`, borderLeft: `4px solid ${a.c}`, borderRadius: 8, padding: 10, cursor: "pointer" }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>{a.nm}{sp.playerBwlArch === a.id ? ' 👤' : ''}</div>
                     <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>{a.sub}</div>
                 </div>))}</div>
                 <SecH title="Phase Effectiveness" />
@@ -262,6 +365,8 @@ export default function CoachAssessment() {
             </div>);
 
             if (cPage === 1) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
+                <ConfidenceContext matchups={BAT_MATCHUPS} domain="bat" title="BATTING" color={B.pk} />
+                {hasBowling && <ConfidenceContext matchups={BWL_MATCHUPS} domain="bwl" title="BOWLING" color={B.bl} />}
                 <SecH title={t.pL} sub="Rate 1-5" />
                 <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 10, lineHeight: 1.6 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Standardised Rating Rubric</div>
@@ -280,6 +385,7 @@ export default function CoachAssessment() {
             </div>);
 
             if (cPage === 2) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
+                <ConfidenceContext matchups={MENTAL_MATCHUPS} domain="mnt" title="MENTAL & CHARACTER" color={B.prp} />
                 <SecH title="Game Intelligence" />
                 <AssGrid items={IQ_ITEMS} values={cd} onRate={cU} color={B.sky} SKILL_DEFS={COACH_DEFS} keyPrefix="iq" />
                 <SecH title="Mental & Character" sub="Royals Way aligned" />
@@ -341,10 +447,23 @@ export default function CoachAssessment() {
                                 {ccmR.code && <div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>Top Comp</div><div style={{ fontSize: 10, fontWeight: 600, color: B.w, fontFamily: F }}>{ccmR.code}</div></div>}
                             </div>
                         </div>
-                        {/* SAGI */}
-                        {dn.sagi !== null && <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div><div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>SELF-AWARENESS (SAGI)</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: F, marginTop: 2 }}>Gap: {dn.sagi > 0 ? '+' : ''}{dn.sagi.toFixed(2)}</div></div>
-                            <div style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 800, background: `${dn.sagiColor}20`, color: dn.sagiColor, fontFamily: F }}>{dn.sagiLabel}</div>
+                        {/* SAGI — dual layer */}
+                        {dn.sagi !== null && <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>SELF-AWARENESS (SAGI)</div>
+                                <div style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 800, background: `${dn.sagiColor}20`, color: dn.sagiColor, fontFamily: F }}>{dn.sagiLabel}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                {dn.internalSAGI !== null && <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 6, padding: '6px 8px' }}>
+                                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.35)', fontFamily: F }}>Internal (Conf vs Freq)</div>
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{dn.internalSAGI > 0 ? '+' : ''}{dn.internalSAGI.toFixed(2)}</div>
+                                </div>}
+                                {dn.crossSAGI !== null && <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 6, padding: '6px 8px' }}>
+                                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.35)', fontFamily: F }}>Cross-Layer (Player vs Coach)</div>
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{dn.crossSAGI > 0 ? '+' : ''}{dn.crossSAGI.toFixed(2)}</div>
+                                </div>}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: F, marginTop: 4 }}>Combined: {dn.sagi > 0 ? '+' : ''}{dn.sagi.toFixed(2)}</div>
                         </div>}
                         {/* Trajectory */}
                         {dn.trajectory && <div style={{ background: `${B.grn}20`, borderRadius: 8, padding: 10, marginBottom: 6 }}>
