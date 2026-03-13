@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "last_updated": "2026-03-13",
+  "runs": [
+    {
+      "date": "2026-03-13",
+      "session": "Initial stability audit",
+      "commit": "46e51ec",
+      "tests": 67,
+      "health_score_before": 5.5,
+      "health_score_after": 10,
+      "findings_fixed": [
+        "[CRITICAL] user_profiles.submitted never set after onboarding — players looped back to empty form on refresh",
+        "[HIGH] Mock data served to coaches in production — no DEV guard on MOCK fallback",
+        "[HIGH] saveAssessmentToDB silently swallowed upsert errors — no error check on result",
+        "[HIGH] PlayerPortal used userProfile.name (doesn't exist) instead of userProfile.full_name",
+        "[HIGH] savePlayerToDB returned null on error instead of throwing",
+        "[HIGH] Competition grade insert errors silently swallowed",
+        "[MEDIUM] markAttendance wrote to non-existent updated_at column — every upsert failed",
+        "[MEDIUM] PlayerPortal attendance used auth UUID instead of players.id — always empty",
+        "[MEDIUM] Static _isDesktop flag never updated on resize — migrated 15+ call sites to dynamic",
+        "[MEDIUM] 654kB CoachAssessment chunk — lazy-loaded ReportCard/EngineGuide/reportGenerator → 29.7kB",
+        "[LOW] Dead clone code in reportGenerator.js",
+        "[LOW] Unused useAutoSave.js hook — deleted",
+        "[LOW] Calibration loaders returned null instead of throwing",
+        "[LOW] PDF generation errors invisible to user — added toast feedback"
+      ],
+      "patterns_learned": [
+        "user_profiles.submitted is the portal routing gate — must be synced when players.submitted is set",
+        "Supabase upsert() returns { data, error } — must destructure and check error",
+        "attendance table has no updated_at column — code must not write to it",
+        "userProfile uses full_name not name — Supabase column naming",
+        "Mock data fallback must be behind import.meta.env.DEV flag"
+      ]
+    },
+    {
+      "date": "2026-03-13",
+      "session": "E2E player profile testing + coach pipeline testing",
+      "commit": "a99a584",
+      "tests": 160,
+      "health_score_before": 10,
+      "health_score_after": 10,
+      "findings_fixed": [
+        "[MEDIUM] calcCohortPercentile could return >100% in small cohorts — added Math.min(100,...)",
+        "[MEDIUM] PDI could exceed 5.0 scale max when CCM multiplied CSS above 5.0 — added Math.min(5,...)",
+        "[MEDIUM] pdiPct could exceed 100 — added Math.min(100,...)"
+      ],
+      "patterns_learned": [
+        "CCM multiplier can push CSS values above 5.0 — always clamp PDI to scale max",
+        "Cohort percentile formula below/(length-1)*100 exceeds 100 when player is in allPlayers array",
+        "Supabase null vs JS undefined: save transforms produce null, load returns null not undefined",
+        "Questionnaire answers (12 questions) can outweigh coach archetype assignment (3.0 weight) in DNA calc",
+        "Archetype DNA percentages must sum to 100 — normalise() function handles rounding",
+        "Save/load symmetry: every rating key must survive cd → saveTransform → loadTransform → cd",
+        "Coach assessment key counts vary by role — batter t2=4, pace/spin t2=6, keeper t2=10, allrounder t2=5"
+      ]
+    }
+  ],
+  "known_patterns": {
+    "position_indexed_arrays": {
+      "description": "BAT_ITEMS, PACE_ITEMS, SPIN_ITEMS, KEEP_ITEMS, IQ_ITEMS, MN_ITEMS — NEVER reorder, only append",
+      "risk": "CRITICAL",
+      "check": "Count items and compare to expected: BAT=10, PACE=10, SPIN=10, KEEP=8, IQ=6, MN=7, PH=5 per role"
+    },
+    "null_vs_undefined": {
+      "description": "Supabase returns null for missing JSONB fields. JS save transforms use || null. Load side uses || {} for spreading.",
+      "risk": "MEDIUM",
+      "check": "Symmetry test: save(load(save(cd))) must equal save(cd)"
+    },
+    "engine_scale_bounds": {
+      "description": "PDI max 5.0, pdiPct max 100, cohort percentile max 100, age score max 100",
+      "risk": "MEDIUM",
+      "check": "Verify Math.min() clamps on all score outputs"
+    },
+    "dual_layer_sagi": {
+      "description": "Internal (confidence - frequency within player) + Cross-layer (player domain avg vs coach domain avg). Blend 60/40 when both available.",
+      "risk": "LOW",
+      "check": "Run SAGI with over/under/aligned self-data and verify correct labels"
+    },
+    "archetype_v3": {
+      "description": "12 MCQ questions per discipline. scoreArchetypeAnswers() normalises to 0-100%. Dual threshold 15% for secondary archetype.",
+      "risk": "LOW",
+      "check": "Run scoreBatArchetype with known bias answers and verify primary identification"
+    },
+    "junior_cutoff": {
+      "description": "getCricketAge() < 14 = junior. Different question sets, rating labels, matchup wording.",
+      "risk": "LOW",
+      "check": "getCricketAge('15/03/2013') should return < 14 for 2025/26 season"
+    },
+    "coach_ui_gaps": {
+      "description": "fld_ (Athletic Fielding) and pwr_ (Power Hitting) pillars exist in engine but have no coach UI inputs. Power Hitting falls back to t1_4/t1_9.",
+      "risk": "INFO",
+      "check": "Verify engine handles zero fld_ and pwr_ data gracefully"
+    },
+    "submitted_sync": {
+      "description": "user_profiles.submitted must be set to true after successful savePlayerToDB in PlayerOnboarding. This is the portal routing gate.",
+      "risk": "CRITICAL",
+      "check": "grep for supabase.from('user_profiles').update({ submitted: true }) in PlayerOnboarding submit handler"
+    },
+    "mock_data_guard": {
+      "description": "MOCK data fallback in CoachAssessment must be gated behind import.meta.env.DEV",
+      "risk": "HIGH",
+      "check": "grep import.meta.env.DEV in MOCK usage context"
+    },
+    "responsive_dynamic": {
+      "description": "All responsive checks must use isDesktop() function, not static _isDesktop constant",
+      "risk": "MEDIUM",
+      "check": "Zero imports of _isDesktop, dkWrap, DSZ, DSF from theme.js outside theme.js itself"
+    }
+  },
+  "incident_history": [
+    {"date": "2026-02-20", "severity": "CRITICAL", "description": "RLS policy change locked out login flow", "root_cause": "Security hardening removed anon SELECT on program_members", "prevention": "Always trace which role (anon vs authenticated) executes each query before changing RLS"},
+    {"date": "2026-02-20", "severity": "HIGH", "description": "Promise.all destructuring mismatch in AdminDashboard", "root_cause": "Count of promises and destructured variables didn't match", "prevention": "For every Promise.all, count promises and destructured variables — must match in order"},
+    {"date": "2026-02-20", "severity": "MEDIUM", "description": "Env var changes without server restart", "root_cause": "Vite caches env vars at startup", "prevention": "Restart Vite dev server after any .env change"},
+    {"date": "2026-02-21", "severity": "CRITICAL", "description": "React hooks inside conditionals → white screen", "root_cause": "useState/useEffect called inside if/for blocks", "prevention": "Search every .jsx file — hooks must be at top level of component"},
+    {"date": "2026-02-21", "severity": "HIGH", "description": "Stale closures in debounced auto-save", "root_cause": "setTimeout captured old state value", "prevention": "Never reference React state inside setTimeout — use useRef"},
+    {"date": "2026-02-21", "severity": "HIGH", "description": "JSONB shape mismatch between writer and reader", "root_cause": "Writer used different key names than reader expected", "prevention": "For every new data write, trace ALL readers and verify key names match"},
+    {"date": "2026-03-13", "severity": "CRITICAL", "description": "user_profiles.submitted never written after onboarding", "root_cause": "savePlayerToDB writes to players table but routing checks user_profiles", "prevention": "submitted_sync pattern check on every audit"},
+    {"date": "2026-03-13", "severity": "HIGH", "description": "Mock data shown to coaches in production", "root_cause": "No DEV guard on MOCK fallback in refreshPlayers", "prevention": "mock_data_guard pattern check on every audit"},
+    {"date": "2026-03-13", "severity": "MEDIUM", "description": "attendance.updated_at doesn't exist → upserts fail", "root_cause": "Code wrote to a column that was never created", "prevention": "Schema sync check — verify every written column exists in live DB"},
+    {"date": "2026-03-13", "severity": "MEDIUM", "description": "PlayerPortal used auth UUID for attendance query", "root_cause": "attendance.player_id stores players.id not auth user UUID", "prevention": "Trace ID types across table boundaries"},
+    {"date": "2026-03-13", "severity": "MEDIUM", "description": "PDI exceeded 5.0 scale maximum", "root_cause": "CCM multiplier pushed CSS above 5.0, no clamp", "prevention": "engine_scale_bounds pattern check on every audit"},
+    {"date": "2026-03-13", "severity": "MEDIUM", "description": "Cohort percentile exceeded 100%", "root_cause": "below/(length-1)*100 formula exceeds 100 when player in allPlayers", "prevention": "engine_scale_bounds pattern check on every audit"}
+  ],
+  "regression_checklist": [
+    "user_profiles.submitted sync in PlayerOnboarding submit handler",
+    "Mock data DEV guard in CoachAssessment refreshPlayers",
+    "saveAssessmentToDB throws on upsert error",
+    "savePlayerToDB throws on insert error (not return null)",
+    "full_name not name in PlayerPortal",
+    "No attendance.updated_at write",
+    "PlayerPortal looks up players.id from auth_user_id before attendance query",
+    "Dynamic isDesktop() not static _isDesktop",
+    "PDI clamped to 5.0, pdiPct to 100, cohort to 100",
+    "Lazy-loaded ReportCard, EngineGuide, reportGenerator"
+  ]
+}
