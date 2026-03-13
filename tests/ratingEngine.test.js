@@ -15,6 +15,8 @@ import {
     calcSelfAwarenessScore,
     calcArchetypeDNA,
     calcGrowthDelta,
+    extractMatchUpSelf,
+    calcInternalSAGI,
     techItems,
     FALLBACK_STAT_BENCHMARKS,
     FALLBACK_SUB_WEIGHTS,
@@ -345,6 +347,125 @@ describe('calcArchetypeDNA', () => {
         const result = calcArchetypeDNA({}, null, null);
         const batTotal = Object.values(result.bat).reduce((s, v) => s + v, 0);
         expect(batTotal).toBe(0);
+    });
+});
+
+
+// ───────── extractMatchUpSelf ─────────
+describe('extractMatchUpSelf', () => {
+    it('returns zeroes for empty selfData', () => {
+        const result = extractMatchUpSelf({}, false);
+        expect(result.tech).toBe(0);
+        expect(result.mental).toBe(0);
+    });
+
+    it('extracts batting confidence into tech domain', () => {
+        const selfData = {
+            mc_bat_0_c: 4, mc_bat_1_c: 3, mc_bat_2_c: 5, mc_bat_3_c: 3,
+            mc_bat_4_c: 4, mc_bat_5_c: 3, mc_bat_6_c: 4,
+        };
+        const result = extractMatchUpSelf(selfData, false);
+        expect(result.tech).toBeGreaterThan(0);
+        expect(result.techN).toBe(7);
+    });
+
+    it('includes bowling in tech domain when hasBowling', () => {
+        const selfData = {
+            mc_bat_0_c: 3, mc_bwl_0_c: 4, mc_bwl_1_c: 3,
+        };
+        const withBowl = extractMatchUpSelf(selfData, true);
+        const withoutBowl = extractMatchUpSelf(selfData, false);
+        expect(withBowl.techN).toBeGreaterThan(withoutBowl.techN);
+    });
+
+    it('extracts mental confidence correctly', () => {
+        const selfData = {
+            mc_mnt_0_c: 5, mc_mnt_1_c: 4, mc_mnt_2_c: 3, mc_mnt_3_c: 4, mc_mnt_4_c: 3,
+        };
+        const result = extractMatchUpSelf(selfData, false);
+        expect(result.mental).toBeCloseTo(3.8, 1);
+        expect(result.mentalN).toBe(5);
+    });
+});
+
+// ───────── calcInternalSAGI ─────────
+describe('calcInternalSAGI', () => {
+    it('returns null with insufficient data', () => {
+        expect(calcInternalSAGI({}, false)).toBeNull();
+        expect(calcInternalSAGI({ mc_bat_0_c: 4 }, false)).toBeNull();
+    });
+
+    it('returns 0 when confidence equals frequency', () => {
+        const selfData = {};
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 3; selfData[`mc_bat_${i}_f`] = 3; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 3; selfData[`mc_mnt_${i}_f`] = 3; }
+        expect(calcInternalSAGI(selfData, false)).toBe(0);
+    });
+
+    it('returns positive when confidence exceeds frequency (overestimates)', () => {
+        const selfData = {};
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 5; selfData[`mc_bat_${i}_f`] = 3; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 5; selfData[`mc_mnt_${i}_f`] = 3; }
+        const result = calcInternalSAGI(selfData, false);
+        expect(result).toBeGreaterThan(0);
+    });
+
+    it('returns negative when frequency exceeds confidence (underestimates)', () => {
+        const selfData = {};
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 2; selfData[`mc_bat_${i}_f`] = 4; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 2; selfData[`mc_mnt_${i}_f`] = 4; }
+        const result = calcInternalSAGI(selfData, false);
+        expect(result).toBeLessThan(0);
+    });
+
+    it('includes bowling match-ups when hasBowling is true', () => {
+        const selfData = {};
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 3; selfData[`mc_bat_${i}_f`] = 3; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 3; selfData[`mc_mnt_${i}_f`] = 3; }
+        // Bowling overestimates heavily
+        for (let i = 0; i < 6; i++) { selfData[`mc_bwl_${i}_c`] = 5; selfData[`mc_bwl_${i}_f`] = 1; }
+        const withBowl = calcInternalSAGI(selfData, true);
+        const withoutBowl = calcInternalSAGI(selfData, false);
+        expect(withBowl).toBeGreaterThan(withoutBowl);
+    });
+});
+
+// ───────── calcPDI SAGI integration ─────────
+describe('calcPDI SAGI (dual-layer)', () => {
+    it('calculates internal SAGI from match-up data alone (no coach)', () => {
+        const selfData = {};
+        // Batting: confidence 4, frequency 2 → overestimates
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 4; selfData[`mc_bat_${i}_f`] = 2; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 4; selfData[`mc_mnt_${i}_f`] = 2; }
+        const result = calcPDI({}, selfData, 'batter', { ccm: 0 }, null, null, []);
+        expect(result.internalSAGI).toBeGreaterThan(0);
+        expect(result.sagi).toBeGreaterThan(0); // should use internal since no coach
+    });
+
+    it('blends internal + cross-layer SAGI when both available', () => {
+        const coachData = { t1_0: 3, t1_1: 3, t1_2: 3, t1_3: 3, t1_4: 3, t1_5: 3, t1_6: 3, t1_7: 3, t1_8: 3, t1_9: 3, iq_0: 3, iq_1: 3, iq_2: 3, iq_3: 3, iq_4: 3, iq_5: 3 };
+        const selfData = {};
+        // Match-up confidence is higher than coach ratings → cross-layer positive
+        for (let i = 0; i < 7; i++) { selfData[`mc_bat_${i}_c`] = 5; selfData[`mc_bat_${i}_f`] = 5; }
+        for (let i = 0; i < 5; i++) { selfData[`mc_mnt_${i}_c`] = 5; selfData[`mc_mnt_${i}_f`] = 5; }
+        const result = calcPDI(coachData, selfData, 'batter', { ccm: 1.0, cti: 1.0, arm: 1 }, null, null, []);
+        expect(result.internalSAGI).toBe(0); // conf = freq
+        expect(result.crossSAGI).toBeGreaterThan(0); // self > coach
+        expect(result.sagi).toBeGreaterThan(0); // blended
+    });
+
+    it('match-up confidence feeds into CSS blend when old sr_ keys empty', () => {
+        const coachData = { t1_0: 4, t1_1: 4, t1_2: 4, t1_3: 4, t1_4: 4, t1_5: 4, t1_6: 4, t1_7: 4, t1_8: 4, t1_9: 4 };
+        const selfWithMC = {};
+        for (let i = 0; i < 7; i++) { selfWithMC[`mc_bat_${i}_c`] = 3; selfWithMC[`mc_bat_${i}_f`] = 3; }
+
+        const resultWithMC = calcPDI(coachData, selfWithMC, 'batter', { ccm: 1.0, cti: 1.0, arm: 1 }, null, null, []);
+        const resultEmpty = calcPDI(coachData, {}, 'batter', { ccm: 1.0, cti: 1.0, arm: 1 }, null, null, []);
+
+        // With match-up data, PDI should differ because self-contribution changes the blend
+        const tmWithMC = resultWithMC.domains.find(d => d.k === 'tm').css;
+        const tmEmpty = resultEmpty.domains.find(d => d.k === 'tm').css;
+        expect(tmWithMC).not.toBe(tmEmpty);
     });
 });
 

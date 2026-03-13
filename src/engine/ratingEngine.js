@@ -464,6 +464,75 @@ export function calcGrowthDelta(baselinePDI, currentPDI) {
     };
 }
 
+// ═══ MATCH-UP CONFIDENCE → DOMAIN SELF-SCORES ═══
+// Extracts domain-level 1-5 averages from match-up confidence data.
+// selfData keys: mc_bat_N_c (confidence), mc_bat_N_f (frequency)
+// Returns domain self-scores that plug into the CSS blend where old sr_ keys are empty.
+export function extractMatchUpSelf(selfData, hasBowling) {
+    if (!selfData) return { tech: 0, tact: 0, mental: 0, phase: 0, techN: 0, tactN: 0, mentalN: 0, phaseN: 0 };
+    const avg = (keys) => {
+        let s = 0, n = 0;
+        keys.forEach(k => { const v = selfData[k]; if (v > 0) { s += v; n++; } });
+        return { a: n > 0 ? s / n : 0, n };
+    };
+
+    // Technical self: all batting + bowling confidence ratings
+    const batConfKeys = [0,1,2,3,4,5,6].map(i => `mc_bat_${i}_c`);
+    const bwlConfKeys = hasBowling ? [0,1,2,3,4,5].map(i => `mc_bwl_${i}_c`) : [];
+    const techResult = avg([...batConfKeys, ...bwlConfKeys]);
+
+    // Tactical self: rotation(3), powerplay(5), death batting(6), bowling to plan(4), death bowl(5)
+    const tactKeys = ['mc_bat_3_c', 'mc_bat_5_c', 'mc_bat_6_c'];
+    if (hasBowling) tactKeys.push('mc_bwl_4_c', 'mc_bwl_5_c');
+    const tactResult = avg(tactKeys);
+
+    // Mental self: all mental match-up confidence
+    const mntConfKeys = [0,1,2,3,4].map(i => `mc_mnt_${i}_c`);
+    const mentalResult = avg(mntConfKeys);
+
+    // Phase self: pressure(4), pp(5), death(6) batting + pressure(2), death(5) bowling
+    const phaseKeys = ['mc_bat_4_c', 'mc_bat_5_c', 'mc_bat_6_c'];
+    if (hasBowling) phaseKeys.push('mc_bwl_2_c', 'mc_bwl_5_c');
+    const phaseResult = avg(phaseKeys);
+
+    return {
+        tech: techResult.a, techN: techResult.n,
+        tact: tactResult.a, tactN: tactResult.n,
+        mental: mentalResult.a, mentalN: mentalResult.n,
+        phase: phaseResult.a, phaseN: phaseResult.n,
+    };
+}
+
+// ═══ INTERNAL SAGI (Confidence vs Frequency gap within player data) ═══
+// Positive gap = overestimates (confident but doesn't execute)
+// Negative gap = underestimates (executes well but lacks confidence)
+// Near zero = self-aware
+export function calcInternalSAGI(selfData, hasBowling) {
+    if (!selfData) return null;
+    let confSum = 0, confN = 0, freqSum = 0, freqN = 0;
+
+    // Batting match-ups (7)
+    for (let i = 0; i < 7; i++) {
+        const cv = selfData[`mc_bat_${i}_c`]; if (cv > 0) { confSum += cv; confN++; }
+        const fv = selfData[`mc_bat_${i}_f`]; if (fv > 0) { freqSum += fv; freqN++; }
+    }
+    // Bowling match-ups (6)
+    if (hasBowling) {
+        for (let i = 0; i < 6; i++) {
+            const cv = selfData[`mc_bwl_${i}_c`]; if (cv > 0) { confSum += cv; confN++; }
+            const fv = selfData[`mc_bwl_${i}_f`]; if (fv > 0) { freqSum += fv; freqN++; }
+        }
+    }
+    // Mental match-ups (5)
+    for (let i = 0; i < 5; i++) {
+        const cv = selfData[`mc_mnt_${i}_c`]; if (cv > 0) { confSum += cv; confN++; }
+        const fv = selfData[`mc_mnt_${i}_f`]; if (fv > 0) { freqSum += fv; freqN++; }
+    }
+
+    if (confN < 3 || freqN < 3) return null; // need minimum data
+    return Math.round((confSum / confN - freqSum / freqN) * 100) / 100;
+}
+
 // ═══ PDI CALCULATION (8-PILLAR) ═══
 export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constants, playerGrades, opts = {}, topBat = [], topBowl = [], compTiers = []) {
     const c = constants || FALLBACK_CONST;
@@ -492,9 +561,14 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
         sa: ageW.sa ?? w.sa ?? 0.14,
     };
 
+    // ── Extract match-up confidence → domain self-scores ──
+    const hasBowling = ['pace', 'spin', 'allrounder'].includes(role);
+    const mcSelf = extractMatchUpSelf(selfData, hasBowling);
+
+    // Helper: use old sr_ self-data if available, fall back to match-up confidence
+    const selfOrMC = (oldAvg, mcVal) => oldAvg.a > 0 ? oldAvg.a : mcVal;
+
     // ═══ PILLAR 1: TECHNICAL MASTERY ═══
-    // Uses primary + secondary tech items, EXCLUDING Power Hitting (index 4) and Death-Over Hitting (index 9)
-    // from the Technical pillar (those now score under Power Hitting pillar)
     const priAvg = dAvg(coachData, "t1_", t.pri.length);
     const secAvg = dAvg(coachData, "t2_", t.sec.length);
     const priSelf = dAvg(selfData || {}, "t1_", t.pri.length);
@@ -502,13 +576,15 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
     const techAll = priAvg.r + secAvg.r, techSelf = priSelf.r + secSelf.r;
     const techCoachMean = techAll > 0 ? (priAvg.a * priAvg.r + secAvg.a * secAvg.r) / techAll : 0;
     const techSelfMean = techSelf > 0 ? (priSelf.a * priSelf.r + secSelf.a * secSelf.r) / techSelf : 0;
-    const tmCSS = ccm > 0 ? calcCSS(techCoachMean, techSelfMean, ccm, cW, pW) : (techCoachMean || techSelfMean);
+    const techSelfFinal = techSelfMean > 0 ? techSelfMean : mcSelf.tech;
+    const tmCSS = ccm > 0 ? calcCSS(techCoachMean, techSelfFinal, ccm, cW, pW) : (techCoachMean || techSelfFinal);
     const techTotal = priAvg.t + secAvg.t;
 
     // ═══ PILLAR 2: TACTICAL EXECUTION ═══
     const iqAvg = dAvg(coachData, "iq_", IQ_ITEMS.length);
     const iqSelf = dAvg(selfData || {}, "iq_", IQ_ITEMS.length);
-    const teCSS = ccm > 0 ? calcCSS(iqAvg.a, iqSelf.a, ccm, cW, pW) : (iqAvg.a || iqSelf.a);
+    const iqSelfFinal = selfOrMC(iqSelf, mcSelf.tact);
+    const teCSS = ccm > 0 ? calcCSS(iqAvg.a, iqSelfFinal, ccm, cW, pW) : (iqAvg.a || iqSelfFinal);
 
     // ═══ PILLAR 3: PHYSICAL CONDITIONING ═══
     const phAvg = dAvg(coachData, "ph_", (PH_MAP[role] || PH_MAP.batter).length);
@@ -518,14 +594,15 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
     // ═══ PILLAR 4: MENTAL RESILIENCE ═══
     const mnAvg = dAvg(coachData, "mn_", MN_ITEMS.length);
     const mnSelf = dAvg(selfData || {}, "mn_", MN_ITEMS.length);
-    const mrCSS = ccm > 0 ? calcCSS(mnAvg.a, mnSelf.a, ccm, cW, pW) : (mnAvg.a || mnSelf.a);
+    const mnSelfFinal = selfOrMC(mnSelf, mcSelf.mental);
+    const mrCSS = ccm > 0 ? calcCSS(mnAvg.a, mnSelfFinal, ccm, cW, pW) : (mnAvg.a || mnSelfFinal);
 
     // ═══ PILLAR 5: ATHLETIC FIELDING ═══
     const fldAvg = dAvg(coachData, "fld_", FLD_ITEMS.length);
     const fldSelf = dAvg(selfData || {}, "fld_", FLD_ITEMS.length);
     const afCSS = ccm > 0 ? calcCSS(fldAvg.a, fldSelf.a, ccm, cW, pW) : (fldAvg.a || fldSelf.a);
 
-    // ═══ PILLAR 6: MATCH IMPACT (Phase Effectiveness + Statistical Performance merged) ═══
+    // ═══ PILLAR 6: MATCH IMPACT (Phase Effectiveness + Statistical Performance) ═══
     const phaseKeys = ["pb_pp", "pw_pp", "pb_mid", "pw_mid", "pb_death", "pw_death"];
     let phaseSum = 0, phaseN = 0;
     phaseKeys.forEach(k => { if (coachData[k] > 0) { phaseSum += coachData[k]; phaseN++; } });
@@ -533,7 +610,8 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
     let phaseSelfSum = 0, phaseSelfN = 0;
     phaseKeys.forEach(k => { if (selfData?.[k] > 0) { phaseSelfSum += selfData[k]; phaseSelfN++; } });
     const phaseSelfMean = phaseSelfN > 0 ? phaseSelfSum / phaseSelfN : 0;
-    const phaseCSS = ccm > 0 ? calcCSS(phaseMean, phaseSelfMean, ccm, cW, pW) : (phaseMean || phaseSelfMean);
+    const phaseSelfFinal = phaseSelfMean > 0 ? phaseSelfMean : mcSelf.phase;
+    const phaseCSS = ccm > 0 ? calcCSS(phaseMean, phaseSelfFinal, ccm, cW, pW) : (phaseMean || phaseSelfFinal);
 
     // Stat domain feeds into Match Impact
     const cti = ccmResult?.cti || 0;
@@ -564,17 +642,58 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
         pwCSS = ccm > 0 ? calcCSS(pwCoachMean, pwSelfMean, ccm, cW, pW) : (pwCoachMean || pwSelfMean);
     }
 
-    // ═══ SAGI (Self-Awareness Gap Index) ═══
-    let coachSum = 0, coachN = 0, selfSum = 0, selfN = 0;
-    const allPfx = ["t1_", "t2_", "iq_", "mn_", "ph_", "fld_", "pwr_"];
-    const allCounts = [t.pri.length, t.sec.length, IQ_ITEMS.length, MN_ITEMS.length, (PH_MAP[role] || PH_MAP.batter).length, FLD_ITEMS.length, PWR_ITEMS.length];
-    allPfx.forEach((pfx, pi) => {
-        for (let i = 0; i < allCounts[pi]; i++) {
-            if (coachData[`${pfx}${i}`] > 0) { coachSum += coachData[`${pfx}${i}`]; coachN++; }
-            if (selfData?.[`${pfx}${i}`] > 0) { selfSum += selfData[`${pfx}${i}`]; selfN++; }
-        }
-    });
-    const sagi = (selfN > 0 && coachN > 0) ? Math.round((selfSum / selfN - coachSum / coachN) * 100) / 100 : null;
+    // ═══ SAGI (Self-Awareness Gap Index) — DUAL LAYER ═══
+    //
+    // Layer A (Internal SAGI): Confidence vs Frequency gap within the player's own match-up data.
+    //   Positive = overestimates, Negative = underestimates, Zero = self-aware.
+    //   Available from day one — no coach data needed.
+    //
+    // Layer B (Cross-Layer SAGI): Player domain confidence avg vs Coach domain rating avg.
+    //   Only available when both coach and match-up data exist.
+    //
+    // Combined SAGI: If both layers are available, blend 60% internal + 40% cross-layer.
+    //   If only internal, use 100% internal. If neither, null.
+
+    const internalSAGI = calcInternalSAGI(selfData, hasBowling);
+
+    // Cross-layer: compare player match-up confidence averages vs coach domain averages
+    let crossSAGI = null;
+    const coachDomainAvgs = [];
+    const selfDomainAvgs = [];
+    if (techCoachMean > 0 && mcSelf.techN > 0) { coachDomainAvgs.push(techCoachMean); selfDomainAvgs.push(mcSelf.tech); }
+    if (iqAvg.a > 0 && mcSelf.tactN > 0) { coachDomainAvgs.push(iqAvg.a); selfDomainAvgs.push(mcSelf.tact); }
+    if (mnAvg.a > 0 && mcSelf.mentalN > 0) { coachDomainAvgs.push(mnAvg.a); selfDomainAvgs.push(mcSelf.mental); }
+    if (phaseMean > 0 && mcSelf.phaseN > 0) { coachDomainAvgs.push(phaseMean); selfDomainAvgs.push(mcSelf.phase); }
+
+    if (coachDomainAvgs.length >= 2) {
+        const coachMean = coachDomainAvgs.reduce((s, v) => s + v, 0) / coachDomainAvgs.length;
+        const selfMean = selfDomainAvgs.reduce((s, v) => s + v, 0) / selfDomainAvgs.length;
+        crossSAGI = Math.round((selfMean - coachMean) * 100) / 100;
+    }
+
+    // Blend: 60% internal, 40% cross-layer when both available
+    let sagi = null;
+    if (internalSAGI !== null && crossSAGI !== null) {
+        sagi = Math.round((internalSAGI * 0.6 + crossSAGI * 0.4) * 100) / 100;
+    } else if (internalSAGI !== null) {
+        sagi = internalSAGI;
+    } else if (crossSAGI !== null) {
+        sagi = crossSAGI;
+    }
+    // Fallback: legacy SAGI from old sr_ keys if no match-up data at all
+    if (sagi === null) {
+        let coachSum = 0, coachN = 0, selfSum = 0, selfN = 0;
+        const allPfx = ["t1_", "t2_", "iq_", "mn_", "ph_", "fld_", "pwr_"];
+        const allCounts = [t.pri.length, t.sec.length, IQ_ITEMS.length, MN_ITEMS.length, (PH_MAP[role] || PH_MAP.batter).length, FLD_ITEMS.length, PWR_ITEMS.length];
+        allPfx.forEach((pfx, pi) => {
+            for (let i = 0; i < allCounts[pi]; i++) {
+                if (coachData[`${pfx}${i}`] > 0) { coachSum += coachData[`${pfx}${i}`]; coachN++; }
+                if (selfData?.[`${pfx}${i}`] > 0) { selfSum += selfData[`${pfx}${i}`]; selfN++; }
+            }
+        });
+        if (selfN > 0 && coachN > 0) sagi = Math.round((selfSum / selfN - coachSum / coachN) * 100) / 100;
+    }
+
     const sagiMin = parseFloat(c.sagi_aligned_min) || -0.5, sagiMax = parseFloat(c.sagi_aligned_max) || 0.5;
     let sagiLabel = "—", sagiColor = B.g400;
     if (sagi !== null) {
@@ -617,7 +736,7 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
     const trajThresh = parseFloat(c.trajectory_age_threshold) || 1.5;
     const trajectory = playerAge && ccmResult?.expectedAge && pdi >= 2.5 && (playerAge < (ccmResult.expectedAge - trajThresh));
 
-    return { pdi, pdiPct, g, gc, domains, cp, tr, ti, sagi, sagiLabel, sagiColor, trajectory, ccmResult, provisional: coachN === 0, statResult };
+    return { pdi, pdiPct, g, gc, domains, cp, tr, ti, sagi, sagiLabel, sagiColor, internalSAGI, crossSAGI, trajectory, ccmResult, provisional: priAvg.r === 0, statResult };
 }
 
 // ═══ CORE SCORE HELPERS ═══
