@@ -9,7 +9,9 @@ import {
     BATTING_PHASE_PREFS, BOWLING_PHASE_PREFS, BOWLING_SPEEDS,
     GOTO_SHOTS, PACE_VARIATIONS, SPIN_VARIATIONS, PHASES, PH_MAP,
     IQ_ITEMS, MN_ITEMS,
-    BAT_QUESTIONS, BWL_QUESTIONS, scoreBatArchetype, scoreBwlArchetype,
+    BAT_QUESTIONS, BWL_QUESTIONS, BAT_QUESTIONS_JR, BWL_QUESTIONS_JR,
+    scoreBatArchetype, scoreBwlArchetype, scoreArchetypeAnswers,
+    getCricketAge, JUNIOR_AGE_CUTOFF,
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
@@ -49,9 +51,13 @@ export default function PlayerOnboarding() {
     const stpN = ["Profile", "Competition History", "T20 Identity", "Self-Assessment", "Player Voice", "Medical & Goals", "Review"];
     const age = getAge(pd.dob);
     const show16 = age && age >= 16;
+    const cricketAge = getCricketAge(pd.dob);
+    const isJunior = cricketAge != null && cricketAge < JUNIOR_AGE_CUTOFF;
     const rid = ROLES.find(r => r.label === pd.role)?.id || 'batter';
     const hasBowling = ['pace', 'spin', 'allrounder'].includes(rid);
     const isPace = ['pace', 'allrounder'].includes(rid);
+    const batQs = isJunior ? BAT_QUESTIONS_JR : BAT_QUESTIONS;
+    const bwlQs = isJunior ? BWL_QUESTIONS_JR : BWL_QUESTIONS;
 
     const goTop = () => window.scrollTo(0, 0);
     const btnSty = (ok, full) => ({ padding: full ? "14px 20px" : "8px 16px", borderRadius: 8, border: "none", background: ok ? `linear-gradient(135deg,${B.bl},${B.pk})` : B.g200, color: ok ? B.w : B.g400, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: ok ? "pointer" : "default", letterSpacing: .5, textTransform: "uppercase", width: full ? "100%" : "auto", marginTop: 6 });
@@ -308,8 +314,8 @@ export default function PlayerOnboarding() {
             };
 
             // ── Archetype reveal ──
-            const ArchReveal = ({ answers, scoreFn, archList, color }) => {
-                if (!answers || answers.filter(a => a != null).length < archList.length) return null;
+            const ArchReveal = ({ answers, scoreFn, archList, color, qCount }) => {
+                if (!answers || answers.filter(a => a != null).length < qCount) return null;
                 const result = scoreFn(answers);
                 const primary = archList.find(a => a.id === result.primary);
                 const secondary = result.secondary ? archList.find(a => a.id === result.secondary) : null;
@@ -337,18 +343,22 @@ export default function PlayerOnboarding() {
             // Auto-compute archetype from questionnaire answers
             const batAns = pd.batArchAnswers || [];
             const bwlAns = pd.bwlArchAnswers || [];
-            const batComplete = batAns.filter(a => a != null).length === BAT_QUESTIONS.length;
-            const bwlComplete = bwlAns.filter(a => a != null).length === BWL_QUESTIONS.length;
+            const batIds = BAT_ARCH.map(a => a.id);
+            const bwlIds = BWL_ARCH.map(a => a.id);
+            const batComplete = batAns.filter(a => a != null).length === batQs.length;
+            const bwlComplete = bwlAns.filter(a => a != null).length === bwlQs.length;
+            const scoreBat = (ans) => scoreArchetypeAnswers(ans, batQs, batIds);
+            const scoreBwl = (ans) => scoreArchetypeAnswers(ans, bwlQs, bwlIds);
 
             // Auto-set computed archetype when questionnaire is complete
             if (batComplete && !pd._batArchComputed) {
-                const r = scoreBatArchetype(batAns);
+                const r = scoreBat(batAns);
                 pu('playerBatArch', r.primary);
                 pu('playerBatArchSecondary', r.secondary);
                 pu('_batArchComputed', true);
             }
             if (bwlComplete && hasBowling && !pd._bwlArchComputed) {
-                const r = scoreBwlArchetype(bwlAns);
+                const r = scoreBwl(bwlAns);
                 pu('playerBwlArch', r.primary);
                 pu('playerBwlArchSecondary', r.secondary);
                 pu('_bwlArchComputed', true);
@@ -407,9 +417,9 @@ export default function PlayerOnboarding() {
 
                 {/* ═══ BATTING ARCHETYPE QUESTIONNAIRE ═══ */}
                 {pd.role && <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
-                    <SecH title="Find Your Batting DNA" sub="Answer these questions honestly — there are no wrong answers. We'll work out your batting identity from your responses." />
-                    <ArchQ questions={BAT_QUESTIONS} answers={pd.batArchAnswers} onAnswer={v => { pu('batArchAnswers', v); pu('_batArchComputed', false); }} color={B.pk} label="BATTING" />
-                    <ArchReveal answers={pd.batArchAnswers} scoreFn={scoreBatArchetype} archList={BAT_ARCH} color={B.pk} />
+                    <SecH title="Find Your Batting DNA" sub={isJunior ? "Just pick the answer that sounds most like you \u2014 there are no wrong answers!" : "Answer these questions honestly \u2014 there are no wrong answers. We'll work out your batting identity from your responses."} />
+                    <ArchQ questions={batQs} answers={pd.batArchAnswers} onAnswer={v => { pu('batArchAnswers', v); pu('_batArchComputed', false); }} color={B.pk} label="BATTING" />
+                    <ArchReveal answers={pd.batArchAnswers} scoreFn={scoreBat} archList={BAT_ARCH} color={B.pk} qCount={batQs.length} />
                 </div>}
 
                 {/* ═══ BOWLING IDENTITY (only if role includes bowling) ═══ */}
@@ -435,8 +445,8 @@ export default function PlayerOnboarding() {
                 {/* ═══ BOWLING ARCHETYPE QUESTIONNAIRE ═══ */}
                 {hasBowling && <div style={{ ...sCard, borderLeft: `3px solid ${B.bl}` }}>
                     <SecH title="Find Your Bowling DNA" sub="Answer these questions honestly — we'll work out your bowling identity from your responses." />
-                    <ArchQ questions={BWL_QUESTIONS} answers={pd.bwlArchAnswers} onAnswer={v => { pu('bwlArchAnswers', v); pu('_bwlArchComputed', false); }} color={B.bl} label="BOWLING" />
-                    <ArchReveal answers={pd.bwlArchAnswers} scoreFn={scoreBwlArchetype} archList={BWL_ARCH} color={B.bl} />
+                    <ArchQ questions={bwlQs} answers={pd.bwlArchAnswers} onAnswer={v => { pu('bwlArchAnswers', v); pu('_bwlArchComputed', false); }} color={B.bl} label="BOWLING" />
+                    <ArchReveal answers={pd.bwlArchAnswers} scoreFn={scoreBwl} archList={BWL_ARCH} color={B.bl} qCount={bwlQs.length} />
                 </div>}
 
                 {/* ═══ ABOUT YOU ═══ */}

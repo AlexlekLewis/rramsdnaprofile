@@ -260,7 +260,130 @@ export const BWL_QUESTIONS = [
     ]},
 ];
 
-// ═══ ARCHETYPE SCORING ALGORITHM ═══
+// ═══ JUNIOR QUESTIONNAIRE (U14 — age as of 1 September) ═══
+// Mostly enjoyment-based with a couple of simple scenarios.
+// Shorter (8 questions each), simpler language, same archetype IDs.
+// Maps to the same scoring algorithm — just fewer data points.
+
+export const BAT_QUESTIONS_JR = [
+    { q: "What\u2019s the most fun part of batting for you?", opts: [
+        { text: "Smashing the ball for a big six", w: { power: 1.0, enforcer: 0.3 } },
+        { text: "Finding the gaps and running quick", w: { tempo: 1.0 } },
+        { text: "Playing a cool shot nobody expects", w: { innovator: 1.0 } },
+        { text: "Helping my team win a close game", w: { finisher: 1.0, tempo: 0.3 } },
+    ]},
+    { q: "When do you like batting?", opts: [
+        { text: "At the start \u2014 I want to face the first ball", w: { enforcer: 1.0 } },
+        { text: "In the middle \u2014 I like to build an innings", w: { tempo: 1.0, innovator: 0.2 } },
+        { text: "At the end \u2014 I like the pressure", w: { finisher: 1.0 } },
+        { text: "Anywhere \u2014 I just like batting", w: { tempo: 0.4, finisher: 0.3, innovator: 0.3 } },
+    ]},
+    { q: "What\u2019s your favourite shot?", opts: [
+        { text: "A big hit over the fence", w: { power: 1.0, enforcer: 0.3 } },
+        { text: "A nice drive along the ground", w: { tempo: 0.8, enforcer: 0.3 } },
+        { text: "A sweep or reverse sweep", w: { innovator: 1.0 } },
+        { text: "Any shot that wins the game", w: { finisher: 1.0 } },
+    ]},
+    { q: "A bowler keeps bowling the same ball. What do you do?", opts: [
+        { text: "Try to smash it for a boundary", w: { power: 0.8, enforcer: 0.5 } },
+        { text: "Wait for the right one, then hit it", w: { tempo: 1.0 } },
+        { text: "Try a different shot to surprise them", w: { innovator: 1.0 } },
+        { text: "Stay patient and pick my moment", w: { finisher: 0.7, tempo: 0.4 } },
+    ]},
+    { q: "You hit a four. How do you feel?", opts: [
+        { text: "I want to hit another one straight away", w: { enforcer: 1.0, power: 0.3 } },
+        { text: "Good \u2014 now I\u2019ll look for a single", w: { tempo: 1.0 } },
+        { text: "Great \u2014 I\u2019ll try something different next ball", w: { innovator: 1.0 } },
+        { text: "Good \u2014 I\u2019ll keep going until the end", w: { finisher: 1.0 } },
+    ]},
+    { q: "What are you best at?", opts: [
+        { text: "Hitting the ball really hard", w: { power: 1.0 } },
+        { text: "Not getting out and scoring steadily", w: { tempo: 1.0 } },
+        { text: "Playing lots of different shots", w: { innovator: 1.0 } },
+        { text: "Scoring when the team really needs it", w: { finisher: 0.8, enforcer: 0.3 } },
+    ]},
+    { q: "The bowler bowls a short ball at you. What do you want to do?", opts: [
+        { text: "Pull it for six!", w: { power: 1.0, enforcer: 0.3 } },
+        { text: "Duck and wait for a better ball", w: { tempo: 1.0 } },
+        { text: "Ramp or scoop it somewhere unexpected", w: { innovator: 1.0 } },
+        { text: "Hit it into a gap and run", w: { finisher: 0.5, tempo: 0.5 } },
+    ]},
+    { q: "How would your friends describe your batting?", opts: [
+        { text: "Big hitter \u2014 goes for boundaries", w: { power: 0.8, enforcer: 0.5 } },
+        { text: "Smart \u2014 doesn\u2019t get out much", w: { tempo: 1.0 } },
+        { text: "Creative \u2014 plays shots nobody else does", w: { innovator: 1.0 } },
+        { text: "Reliable \u2014 always there at the end", w: { finisher: 1.0 } },
+    ]},
+];
+
+export const BWL_QUESTIONS_JR = [
+    { q: "What\u2019s the best feeling when you\u2019re bowling?", opts: [
+        { text: "Knocking the stumps out of the ground", w: { newball: 1.0, spinatk: 0.3 } },
+        { text: "Bowling so well they can\u2019t score off me", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "Tricking the batter with a surprise delivery", w: { spinatk: 1.0 } },
+        { text: "Getting a wicket when the game is close", w: { deathclose: 1.0 } },
+    ]},
+    { q: "When do you like bowling?", opts: [
+        { text: "At the start with the new ball", w: { newball: 1.0 } },
+        { text: "In the middle when I can bowl lots of dots", w: { spinctrl: 0.7, moenforcer: 0.5 } },
+        { text: "At the end when everything matters", w: { deathclose: 1.0 } },
+        { text: "Whenever my team needs a wicket", w: { spinatk: 0.8, newball: 0.3 } },
+    ]},
+    { q: "What are you best at with the ball?", opts: [
+        { text: "Making the ball move \u2014 swing or spin", w: { newball: 0.7, spinatk: 0.5 } },
+        { text: "Bowling in the right spot every time", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "Having lots of different deliveries", w: { spinatk: 0.8, deathclose: 0.4 } },
+        { text: "Bowling fast and making it uncomfortable", w: { moenforcer: 1.0 } },
+    ]},
+    { q: "The batter hits you for four. What do you do next ball?", opts: [
+        { text: "Bowl it faster \u2014 come back harder", w: { newball: 0.6, moenforcer: 0.6 } },
+        { text: "Bowl the same spot \u2014 trust my skills", w: { spinctrl: 0.8, moenforcer: 0.4 } },
+        { text: "Try something totally different", w: { spinatk: 0.8, deathclose: 0.4 } },
+        { text: "Bowl a yorker so they can\u2019t hit me again", w: { deathclose: 1.0 } },
+    ]},
+    { q: "What do you practise the most?", opts: [
+        { text: "Swinging or seaming the ball", w: { newball: 1.0 } },
+        { text: "Hitting my length again and again", w: { spinctrl: 0.8, moenforcer: 0.5 } },
+        { text: "Different deliveries and variations", w: { spinatk: 0.8, deathclose: 0.4 } },
+        { text: "Yorkers and death bowling", w: { deathclose: 1.0 } },
+    ]},
+    { q: "How would your friends describe your bowling?", opts: [
+        { text: "Dangerous \u2014 takes lots of wickets", w: { newball: 1.0, spinatk: 0.3 } },
+        { text: "Tight \u2014 really hard to score off", w: { spinctrl: 1.0 } },
+        { text: "Tricky \u2014 hard to pick what\u2019s coming", w: { spinatk: 1.0 } },
+        { text: "Tough \u2014 bowls fast and makes you uncomfortable", w: { moenforcer: 1.0, deathclose: 0.2 } },
+    ]},
+    { q: "Your captain says you have to bowl the last over. How do you feel?", opts: [
+        { text: "Excited \u2014 I love the pressure!", w: { deathclose: 1.0 } },
+        { text: "Okay \u2014 I\u2019ll just try to bowl my best", w: { spinctrl: 0.5, moenforcer: 0.4, newball: 0.3 } },
+        { text: "I\u2019d rather bowl earlier, but I\u2019ll give it a go", w: { newball: 0.6, spinctrl: 0.4 } },
+        { text: "Good \u2014 I\u2019ll use all my tricks to stop them", w: { spinatk: 0.5, deathclose: 0.6 } },
+    ]},
+    { q: "A batter is blocking everything. What\u2019s your plan?", opts: [
+        { text: "Bowl faster or fuller to get them out", w: { newball: 0.7, moenforcer: 0.5 } },
+        { text: "Keep bowling dots \u2014 they\u2019ll make a mistake", w: { spinctrl: 1.0 } },
+        { text: "Try a surprise delivery to trick them", w: { spinatk: 1.0 } },
+        { text: "Change my pace to confuse them", w: { deathclose: 0.7, spinatk: 0.4 } },
+    ]},
+];
+
+// ═══ CRICKET AGE — age as of September 1 of the current season ═══
+export function getCricketAge(dob) {
+    if (!dob) return null;
+    const p = dob.split("/");
+    if (p.length !== 3) return null;
+    const birthDate = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+    if (isNaN(birthDate.getTime())) return null;
+    // Cricket age = age as of September 1 of the current year
+    const now = new Date();
+    const sep1 = new Date(now.getFullYear(), 8, 1); // month 8 = September
+    let age = sep1.getFullYear() - birthDate.getFullYear();
+    const mDiff = sep1.getMonth() - birthDate.getMonth();
+    if (mDiff < 0 || (mDiff === 0 && sep1.getDate() < birthDate.getDate())) age--;
+    return age;
+}
+
+export const JUNIOR_AGE_CUTOFF = 14; // U14 = cricket age < 14 as of Sep 1
 // Called after questionnaire is complete. Returns { primary, secondary, scores }
 const DUAL_THRESHOLD = 15; // secondary within 15% of primary = dual archetype
 
