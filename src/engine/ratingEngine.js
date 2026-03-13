@@ -748,7 +748,7 @@ export function calcCohortPercentile(playerPdi, allPlayers, compTiers, dbWeights
     }).filter(v => v > 0);
     if (pdis.length <= 1) return 50;
     const below = pdis.filter(v => v < playerPdi).length;
-    return Math.round((below / (pdis.length - 1)) * 100);
+    return Math.min(100, Math.round((below / (pdis.length - 1)) * 100));
 }
 
 export function calcAgeScore(arm, constants) {
