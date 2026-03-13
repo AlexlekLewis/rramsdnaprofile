@@ -9,28 +9,25 @@ export const ROLES = [
     { id: "allrounder", label: "Batting All-Rounder", sh: "AR", dbId: "batting_allrounder" },
 ];
 
-// ═══ ARCHETYPES ═══
-// TRAP 1: Existing items MUST NOT be reordered or removed. New items appended only.
+// ═══ ARCHETYPES v3 — Questionnaire-driven T20 identity system ═══
+// Players self-identify via 12 multiple-choice questions per discipline.
+// The algorithm scores answers against hidden archetype weights, then reveals the result.
+// Coaches select archetypes directly based on observation signals.
 
 export const BAT_ARCH = [
-    { id: "firestarter", nm: "THE FIRESTARTER", sub: "You score fast from ball one. You back yourself to hit boundaries in the powerplay and put pressure on the bowlers early.", c: B.pk },
-    { id: "controller", nm: "THE CONTROLLER", sub: "You control the tempo of the innings. You find gaps, rotate strike, and build partnerships — then accelerate when the time is right.", c: B.bl },
-    { id: "closer", nm: "THE CLOSER", sub: "You're the person the team wants at the crease when the game is on the line. You stay calm under pressure and finish the job.", c: B.pk },
-    { id: "dual", nm: "THE DUAL THREAT", sub: "You make an impact with both bat and ball. You can change the game in either role and your team relies on your versatility.", c: B.bl },
-    // ── Appended v2 ──
-    { id: "threesixty", nm: "THE 360°", sub: "You score all around the ground. Bowlers can't set a field to you because you can hit to every part of the boundary.", c: B.sky },
-    { id: "spindom", nm: "SPIN DOMINATOR", sub: "You read spin early and score freely. While others struggle against spinners, you dominate them and control the middle overs.", c: B.prp },
+    { id: "enforcer", nm: "POWERPLAY ENFORCER", sub: "Sets the tone. Takes on the new ball. Puts the opposition on the back foot from ball one.", c: B.pk },
+    { id: "tempo", nm: "TEMPO CONTROLLER", sub: "Reads the game from the moment they walk in. Calculates how to win and manages risk accordingly.", c: B.sky },
+    { id: "finisher", nm: "THE FINISHER", sub: "Lives for the last five overs. Hits the older ball to all parts and finds boundaries against all bowling types.", c: B.prp },
+    { id: "power", nm: "POWER HITTER", sub: "Clears the boundary consistently. Changes the game with raw hitting ability.", c: B.pk },
+    { id: "innovator", nm: "THE INNOVATOR", sub: "Plays shots other batters can't. Scores in areas the field can't cover. A 360-degree problem for bowlers.", c: B.grn },
 ];
 
 export const BWL_ARCH = [
-    { id: "hunter", nm: "WICKET HUNTER", sub: "Your main job is to take wickets. You attack the stumps, find edges, and break partnerships. You're the strike bowler.", c: B.pk },
-    { id: "weapon", nm: "THE WEAPON", sub: "You do both — you take wickets AND you don't go for runs. You're the bowler the captain turns to in any situation.", c: B.bl },
-    { id: "squeeze", nm: "THE SQUEEZE", sub: "You stop the scoring. You bowl dots, build pressure, and force the batter into mistakes. Economy is your superpower.", c: B.bl },
-    { id: "developer", nm: "THE DEVELOPER", sub: "You're building your bowling game. You have clear areas to improve and you're working hard to get better every session.", c: B.g400 },
-    // ── Appended v2 ──
-    { id: "death", nm: "DEATH SPECIALIST", sub: "You own the last 4 overs. You nail yorkers, mix up your pace, and stay calm when the batter is trying to hit you out of the ground.", c: B.pk },
-    { id: "express", nm: "EXPRESS PACE", sub: "You bowl fast — over 135 km/h. Your raw speed makes batters uncomfortable and you use it to create chances.", c: B.nv },
-    { id: "containing", nm: "CONTAINING SPINNER", sub: "You control the game with your accuracy. You don't give away easy runs and you use variations to keep batters guessing.", c: B.sky },
+    { id: "newball", nm: "NEW BALL STRIKER", sub: "Takes on the top order with the new ball. Swings it, seams it, and looks to take wickets up front.", c: B.pk },
+    { id: "spinctrl", nm: "SPIN CONTROLLER", sub: "Controls the middle overs through accuracy and pressure. Makes the batter hit where they want them to.", c: B.sky },
+    { id: "spinatk", nm: "SPIN ATTACKER", sub: "Takes wickets through deception, turn, and variation. Breaks partnerships and creates breakthroughs.", c: B.prp },
+    { id: "deathclose", nm: "DEATH CLOSER", sub: "Owns the last four overs. Limits boundaries through variation and composure when the pressure is at its peak.", c: B.pk },
+    { id: "moenforcer", nm: "MIDDLE-OVERS ENFORCER", sub: "Controls the middle overs with pace. Bowls hard lengths, uses the crease, and makes batting uncomfortable.", c: B.org },
 ];
 
 // ═══ SKILL ITEMS (position-indexed — NEVER reorder) ═══
@@ -84,63 +81,239 @@ export const PILLAR_LABELS = [
     { k: "sa", l: "Self-Awareness", c: B.bl },
 ];
 
-// ═══ ARCHETYPE → PILLAR AFFINITY MAP ═══
+// ═══ ARCHETYPE → PILLAR AFFINITY MAP (v3) ═══
 // Which pillars each archetype emphasises (used for archetype alignment multiplier)
 // Values sum to ~1.0 per archetype — the "expected profile shape"
 export const BAT_ARCH_AFFINITY = {
-    firestarter: { pw: 0.25, mi: 0.25, mr: 0.15, tm: 0.15, te: 0.10, af: 0.05, pc: 0.05, sa: 0 },
-    controller: { te: 0.25, sa: 0.20, tm: 0.15, mr: 0.15, mi: 0.10, af: 0.05, pw: 0.05, pc: 0.05 },
-    closer: { mr: 0.25, mi: 0.25, te: 0.15, tm: 0.15, sa: 0.10, pw: 0.05, af: 0.05, pc: 0 },
-    dual: { tm: 0.20, af: 0.20, mi: 0.15, te: 0.15, mr: 0.10, pc: 0.10, pw: 0.05, sa: 0.05 },
-    threesixty: { te: 0.25, pw: 0.20, tm: 0.15, mi: 0.15, sa: 0.10, mr: 0.05, af: 0.05, pc: 0.05 },
-    spindom: { te: 0.25, tm: 0.25, mi: 0.15, sa: 0.10, mr: 0.10, af: 0.05, pw: 0.05, pc: 0.05 },
+    enforcer: { pw: 0.25, mi: 0.25, mr: 0.15, tm: 0.15, te: 0.10, af: 0.05, pc: 0.05, sa: 0 },
+    tempo:    { te: 0.25, sa: 0.20, tm: 0.15, mr: 0.15, mi: 0.10, af: 0.05, pw: 0.05, pc: 0.05 },
+    finisher: { mr: 0.25, mi: 0.20, pw: 0.15, te: 0.15, tm: 0.10, sa: 0.10, af: 0.05, pc: 0 },
+    power:    { pw: 0.30, mi: 0.20, tm: 0.15, mr: 0.15, te: 0.05, pc: 0.05, af: 0.05, sa: 0.05 },
+    innovator:{ te: 0.25, pw: 0.20, tm: 0.15, mi: 0.15, sa: 0.10, mr: 0.05, af: 0.05, pc: 0.05 },
 };
 
 export const BWL_ARCH_AFFINITY = {
-    hunter: { tm: 0.25, mi: 0.25, mr: 0.15, te: 0.10, pc: 0.10, pw: 0.05, af: 0.05, sa: 0.05 },
-    weapon: { tm: 0.15, mi: 0.15, mr: 0.15, te: 0.15, pc: 0.15, pw: 0.05, af: 0.10, sa: 0.10 },
-    squeeze: { te: 0.25, mr: 0.20, tm: 0.15, sa: 0.15, mi: 0.10, pc: 0.05, af: 0.05, pw: 0.05 },
-    developer: { sa: 0.20, te: 0.15, tm: 0.15, mr: 0.15, pc: 0.15, af: 0.10, mi: 0.05, pw: 0.05 },
-    death: { mr: 0.25, pw: 0.20, mi: 0.15, tm: 0.15, te: 0.10, pc: 0.05, af: 0.05, sa: 0.05 },
-    express: { pc: 0.25, mi: 0.20, tm: 0.15, mr: 0.15, pw: 0.10, te: 0.05, af: 0.05, sa: 0.05 },
-    containing: { te: 0.25, sa: 0.20, tm: 0.20, mr: 0.10, mi: 0.10, pc: 0.05, af: 0.05, pw: 0.05 },
+    newball:    { tm: 0.25, mi: 0.25, mr: 0.15, te: 0.10, pc: 0.10, pw: 0.05, af: 0.05, sa: 0.05 },
+    spinctrl:   { te: 0.25, mr: 0.20, tm: 0.15, sa: 0.15, mi: 0.10, pc: 0.05, af: 0.05, pw: 0.05 },
+    spinatk:    { tm: 0.25, mi: 0.20, te: 0.15, mr: 0.15, sa: 0.10, pc: 0.05, af: 0.05, pw: 0.05 },
+    deathclose: { mr: 0.25, te: 0.20, mi: 0.15, tm: 0.15, pw: 0.10, pc: 0.05, af: 0.05, sa: 0.05 },
+    moenforcer: { pc: 0.20, tm: 0.20, mr: 0.15, te: 0.15, mi: 0.15, af: 0.05, pw: 0.05, sa: 0.05 },
 };
 
-// ═══ ARCHETYPE SIGNAL MAP — onboarding selections → archetype affinity ═══
-// Each signal adds weight to specific archetypes when present in the player's onboarding data
+// ═══ ARCHETYPE QUESTIONNAIRE — player self-identification via multiple choice ═══
+// Each question maps answer options to archetype weights.
+// Player never sees archetype names. Algorithm computes result from accumulated weights.
+// PE=Powerplay Enforcer, TC=Tempo Controller, FI=Finisher, PH=Power Hitter, IN=Innovator
+// NBS=New Ball Striker, SC=Spin Controller, SA=Spin Attacker, DC=Death Closer, MOE=Middle-Overs Enforcer
+
+export const BAT_QUESTIONS = [
+    { q: "When do you enjoy batting the most?", opts: [
+        { text: "Right at the start when the field is up", w: { enforcer: 1.0, power: 0.3 } },
+        { text: "In the middle when I can build my innings", w: { tempo: 1.0, innovator: 0.3 } },
+        { text: "At the end when the game is on the line", w: { finisher: 1.0, power: 0.2 } },
+        { text: "I\u2019m happy batting anywhere", w: { tempo: 0.5, finisher: 0.3, innovator: 0.2 } },
+    ]},
+    { q: "Your team needs 70 runs from 8 overs. What do you think first?", opts: [
+        { text: "I need to hit boundaries straight away", w: { power: 0.8, finisher: 0.5 } },
+        { text: "Work out which overs to attack and which to take singles", w: { tempo: 1.0 } },
+        { text: "Stay calm, pick the right balls, finish the job", w: { finisher: 1.0 } },
+        { text: "Find ways to score in areas they don\u2019t expect", w: { innovator: 1.0 } },
+    ]},
+    { q: "What makes you feel most confident at the crease?", opts: [
+        { text: "Hitting a big boundary early", w: { enforcer: 0.8, power: 0.6 } },
+        { text: "Finding the gaps and keeping the score moving", w: { tempo: 1.0 } },
+        { text: "Knowing I can score off any type of bowling", w: { finisher: 0.7, innovator: 0.5 } },
+        { text: "Playing a shot that surprises the bowler", w: { innovator: 1.0 } },
+    ]},
+    { q: "The bowler sets a field to stop your favourite shot. What do you do?", opts: [
+        { text: "Hit it harder \u2014 I back my power to beat the field", w: { power: 1.0 } },
+        { text: "Find a different area to score", w: { innovator: 0.8, tempo: 0.4 } },
+        { text: "Take singles and wait for a bad ball", w: { tempo: 1.0 } },
+        { text: "Try something unexpected \u2014 a scoop or reverse sweep", w: { innovator: 1.0 } },
+    ]},
+    { q: "Your opening partner gets out in the second over. What\u2019s your mindset?", opts: [
+        { text: "Keep attacking \u2014 the field is still up", w: { enforcer: 1.0 } },
+        { text: "Settle in and rebuild, but keep the scoreboard ticking", w: { tempo: 1.0 } },
+        { text: "Stay calm and play my natural game", w: { finisher: 0.5, tempo: 0.5 } },
+        { text: "Put pressure back on the bowler", w: { enforcer: 0.5, innovator: 0.5 } },
+    ]},
+    { q: "What type of shot do you love playing the most?", opts: [
+        { text: "A big hit over the boundary", w: { power: 1.0, enforcer: 0.3 } },
+        { text: "A clean drive through the gap", w: { tempo: 0.8, enforcer: 0.3 } },
+        { text: "A scoop, ramp, or reverse sweep", w: { innovator: 1.0 } },
+        { text: "A six when the game is tight", w: { finisher: 1.0 } },
+    ]},
+    { q: "It\u2019s the powerplay. Only two fielders are out. How do you play?", opts: [
+        { text: "Go hard \u2014 this is the best time to score fast", w: { enforcer: 1.0 } },
+        { text: "Mix it up \u2014 some boundaries, some singles", w: { tempo: 0.8, innovator: 0.3 } },
+        { text: "Look for the big shots over the top", w: { power: 1.0 } },
+        { text: "Play creative shots to find gaps the fielders can\u2019t cover", w: { innovator: 1.0 } },
+    ]},
+    { q: "What bothers you the most when batting?", opts: [
+        { text: "Not scoring fast enough", w: { enforcer: 0.7, power: 0.5 } },
+        { text: "Playing a stupid shot at the wrong time", w: { tempo: 1.0 } },
+        { text: "Not being there at the end when my team needs me", w: { finisher: 1.0 } },
+        { text: "Being stuck and unable to find a way to score", w: { innovator: 0.8, tempo: 0.3 } },
+    ]},
+    { q: "A spinner is bowling well and it\u2019s hard to score. What do you do?", opts: [
+        { text: "Use my feet and try to hit over the top", w: { power: 0.7, enforcer: 0.5 } },
+        { text: "Sweep or reverse sweep to areas without fielders", w: { innovator: 1.0 } },
+        { text: "Take singles and wait for a loose ball", w: { tempo: 1.0 } },
+        { text: "Back myself to pick the right ball and hit it hard", w: { finisher: 0.7, power: 0.4 } },
+    ]},
+    { q: "Last over. Your team needs 12 to win. How do you approach it?", opts: [
+        { text: "Stay calm, pick the right balls, back myself", w: { finisher: 1.0 } },
+        { text: "Go big from ball one \u2014 try to finish it early", w: { power: 0.8, enforcer: 0.4 } },
+        { text: "Work out a plan \u2014 which balls to attack, which to run", w: { tempo: 1.0 } },
+        { text: "Try something the bowler won\u2019t expect", w: { innovator: 0.8, finisher: 0.3 } },
+    ]},
+    { q: "How would your teammates describe your batting?", opts: [
+        { text: "Aggressive \u2014 puts bowlers under pressure early", w: { enforcer: 1.0 } },
+        { text: "Smart \u2014 always knows what the team needs", w: { tempo: 1.0 } },
+        { text: "Clutch \u2014 the one they want in at the end", w: { finisher: 1.0 } },
+        { text: "Powerful \u2014 when I hit it, it stays hit", w: { power: 1.0 } },
+        { text: "Unpredictable \u2014 plays shots no one else tries", w: { innovator: 1.0 } },
+    ]},
+    { q: "A fast bowler is bowling short at you. What do you want to do?", opts: [
+        { text: "Pull or hook it for six", w: { power: 1.0, enforcer: 0.3 } },
+        { text: "Duck, sway, and wait for a better ball", w: { tempo: 1.0 } },
+        { text: "Ramp or upper cut it over the keeper", w: { innovator: 1.0 } },
+        { text: "Work it into a gap and take the single", w: { finisher: 0.5, tempo: 0.5 } },
+    ]},
+];
+
+export const BWL_QUESTIONS = [
+    { q: "When do you like bowling the most?", opts: [
+        { text: "With the new ball at the start", w: { newball: 1.0 } },
+        { text: "In the middle overs when I can build pressure", w: { spinctrl: 0.7, moenforcer: 0.5 } },
+        { text: "At the death when the game is on the line", w: { deathclose: 1.0 } },
+        { text: "Whenever my captain needs a wicket", w: { spinatk: 0.8, newball: 0.3 } },
+    ]},
+    { q: "What feels best when you\u2019re bowling?", opts: [
+        { text: "Taking a wicket \u2014 hitting the stumps or finding the edge", w: { newball: 0.8, spinatk: 0.5 } },
+        { text: "Bowling three or four dot balls in a row", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "Tricking the batter with a delivery they didn\u2019t expect", w: { spinatk: 1.0 } },
+        { text: "Nailing a yorker when the batter is trying to hit me", w: { deathclose: 1.0 } },
+    ]},
+    { q: "A batter is attacking you and hitting boundaries. What\u2019s your response?", opts: [
+        { text: "Bowl faster and more aggressively \u2014 attack back", w: { newball: 0.8, moenforcer: 0.5 } },
+        { text: "Go tighter with my line and length", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "Change it up \u2014 slower ball, different line, surprise them", w: { spinatk: 0.7, deathclose: 0.5 } },
+        { text: "Bowl to my plan \u2014 I trust my skills", w: { deathclose: 0.7, spinctrl: 0.4 } },
+    ]},
+    { q: "What\u2019s your biggest strength as a bowler?", opts: [
+        { text: "I can move the ball and beat the bat", w: { newball: 1.0 } },
+        { text: "I\u2019m accurate \u2014 I don\u2019t give away easy runs", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "I have lots of different deliveries", w: { spinatk: 0.7, deathclose: 0.5 } },
+        { text: "I\u2019m good under pressure", w: { deathclose: 1.0 } },
+        { text: "I bowl hard and make batting uncomfortable", w: { moenforcer: 1.0 } },
+    ]},
+    { q: "The field is spread in the middle overs. What\u2019s your plan?", opts: [
+        { text: "Bowl a tight line so they can\u2019t score freely", w: { spinctrl: 1.0 } },
+        { text: "Use my variations to get a wicket", w: { spinatk: 1.0 } },
+        { text: "Hit a hard length and use my pace", w: { moenforcer: 1.0 } },
+        { text: "Change my pace a lot to keep them guessing", w: { spinatk: 0.5, deathclose: 0.5 } },
+    ]},
+    { q: "Your captain asks you to bowl the last over. Team needs 10 to win. How do you feel?", opts: [
+        { text: "Excited \u2014 this is my moment", w: { deathclose: 1.0 } },
+        { text: "Confident \u2014 I\u2019ll stick to my plan", w: { deathclose: 0.5, spinctrl: 0.5 } },
+        { text: "I\u2019d rather bowl earlier, but I\u2019ll give it my best", w: { newball: 0.5, moenforcer: 0.3, spinctrl: 0.2 } },
+        { text: "I\u2019ll use every trick I know to stop them", w: { spinatk: 0.6, deathclose: 0.5 } },
+    ]},
+    { q: "What do you work on most in training?", opts: [
+        { text: "Getting the ball to swing or seam", w: { newball: 1.0 } },
+        { text: "Hitting my length over and over again", w: { spinctrl: 0.8, moenforcer: 0.5 } },
+        { text: "My variations \u2014 slower balls, wrong\u2019uns, different deliveries", w: { spinatk: 0.8, deathclose: 0.4 } },
+        { text: "Yorkers and death bowling", w: { deathclose: 1.0 } },
+        { text: "Bowling at pace and making the batter uncomfortable", w: { moenforcer: 1.0 } },
+    ]},
+    { q: "A left-hand batter comes in. What do you think?", opts: [
+        { text: "Great \u2014 I can angle the ball across them", w: { newball: 1.0 } },
+        { text: "I\u2019ll adjust my line and bowl to my field", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "I have deliveries that spin away from them", w: { spinatk: 1.0 } },
+        { text: "Doesn\u2019t change much \u2014 I\u2019ll back my skills", w: { deathclose: 0.5, moenforcer: 0.5 } },
+    ]},
+    { q: "What bothers you most when bowling?", opts: [
+        { text: "Not getting wickets when I\u2019m bowling well", w: { newball: 0.7, spinatk: 0.5 } },
+        { text: "Going for too many runs", w: { spinctrl: 1.0, moenforcer: 0.3 } },
+        { text: "When the batter reads what I\u2019m doing", w: { spinatk: 1.0 } },
+        { text: "Getting hit at the end when the game is close", w: { deathclose: 1.0 } },
+    ]},
+    { q: "How would your teammates describe your bowling?", opts: [
+        { text: "Dangerous with the new ball \u2014 gets early wickets", w: { newball: 1.0 } },
+        { text: "Tight \u2014 never gives anything away", w: { spinctrl: 1.0 } },
+        { text: "Tricky \u2014 hard to read and full of surprises", w: { spinatk: 1.0 } },
+        { text: "Clutch \u2014 bowls well when the pressure is on", w: { deathclose: 1.0 } },
+        { text: "Tough \u2014 makes batting hard and uncomfortable", w: { moenforcer: 1.0 } },
+    ]},
+    { q: "The batter is just blocking everything. What do you do?", opts: [
+        { text: "Bowl faster or fuller to force a mistake", w: { newball: 0.7, moenforcer: 0.5 } },
+        { text: "Keep going \u2014 dots are good, they\u2019ll make a mistake", w: { spinctrl: 1.0 } },
+        { text: "Try a different delivery to tempt them into a shot", w: { spinatk: 1.0 } },
+        { text: "Mix up my pace \u2014 go slower, then surprise them", w: { deathclose: 0.7, spinatk: 0.4 } },
+    ]},
+    { q: "You get hit for six. Next ball, what do you bowl?", opts: [
+        { text: "Same ball but better \u2014 I back my skills", w: { newball: 0.5, moenforcer: 0.5, spinctrl: 0.3 } },
+        { text: "Something completely different to surprise them", w: { spinatk: 0.8, deathclose: 0.4 } },
+        { text: "A yorker or full ball \u2014 make it hard to hit again", w: { deathclose: 1.0 } },
+        { text: "Tighter line, back of a length \u2014 take the boundary away", w: { spinctrl: 0.6, moenforcer: 0.6 } },
+    ]},
+];
+
+// ═══ ARCHETYPE SCORING ALGORITHM ═══
+// Called after questionnaire is complete. Returns { primary, secondary, scores }
+const DUAL_THRESHOLD = 15; // secondary within 15% of primary = dual archetype
+
+export function scoreArchetypeAnswers(answers, questions, archetypeIds) {
+    // answers = array of selected option indices [0, 2, 1, 3, ...]
+    // questions = BAT_QUESTIONS or BWL_QUESTIONS
+    // archetypeIds = array of archetype ID strings
+    const scores = {};
+    const maxPossible = {};
+    archetypeIds.forEach(id => { scores[id] = 0; maxPossible[id] = 0; });
+
+    questions.forEach((q, qi) => {
+        // Accumulate max possible per archetype from each question
+        archetypeIds.forEach(id => {
+            const bestForArch = Math.max(0, ...q.opts.map(o => o.w[id] || 0));
+            maxPossible[id] += bestForArch;
+        });
+        // Accumulate actual score from selected answer
+        const sel = answers[qi];
+        if (sel != null && q.opts[sel]) {
+            const weights = q.opts[sel].w;
+            Object.entries(weights).forEach(([arch, wt]) => {
+                if (scores[arch] !== undefined) scores[arch] += wt;
+            });
+        }
+    });
+
+    // Normalise to 0-100
+    const pct = {};
+    archetypeIds.forEach(id => {
+        pct[id] = maxPossible[id] > 0 ? Math.round((scores[id] / maxPossible[id]) * 100) : 0;
+    });
+
+    // Find primary and secondary
+    const sorted = Object.entries(pct).sort((a, b) => b[1] - a[1]);
+    const primary = sorted[0]?.[0] || null;
+    const secondary = (sorted[1] && sorted[0][1] - sorted[1][1] <= DUAL_THRESHOLD) ? sorted[1][0] : null;
+
+    return { primary, secondary, scores: pct, raw: scores };
+}
+
+export function scoreBatArchetype(answers) {
+    return scoreArchetypeAnswers(answers, BAT_QUESTIONS, BAT_ARCH.map(a => a.id));
+}
+export function scoreBwlArchetype(answers) {
+    return scoreArchetypeAnswers(answers, BWL_QUESTIONS, BWL_ARCH.map(a => a.id));
+}
+
+// ═══ LEGACY COMPAT: BAT_SIGNAL_MAP still exported for any remaining consumers ═══
+// The questionnaire system replaces signal-based scoring, but existing onboarding data
+// (go-to shots, phases, position) can still contribute supplementary weight.
 export const BAT_SIGNAL_MAP = {
-    // go-to shot → archetype affinities
-    shots: {
-        "Drive": { firestarter: 0.5, controller: 0.3, threesixty: 0.2 },
-        "Pull": { firestarter: 0.5, threesixty: 0.3, closer: 0.2 },
-        "Cut": { controller: 0.4, threesixty: 0.3, firestarter: 0.3 },
-        "Sweep": { spindom: 0.5, controller: 0.3, threesixty: 0.2 },
-        "Reverse Sweep": { threesixty: 0.5, spindom: 0.3, firestarter: 0.2 },
-        "Ramp / Scoop": { threesixty: 0.6, firestarter: 0.3, closer: 0.1 },
-        "Switch Hit": { threesixty: 0.7, firestarter: 0.2, spindom: 0.1 },
-        "Flick": { controller: 0.4, threesixty: 0.3, closer: 0.3 },
-        "Lap / Paddle": { threesixty: 0.5, controller: 0.3, closer: 0.2 },
-        "Lofted Hit": { firestarter: 0.5, threesixty: 0.3, closer: 0.2 },
-        "Late Cut": { controller: 0.5, threesixty: 0.3, spindom: 0.2 },
-        "Upper Cut": { firestarter: 0.4, threesixty: 0.4, closer: 0.2 },
-    },
-    // batting phase preference → archetype affinities
-    phases: {
-        pp: { firestarter: 0.7, threesixty: 0.2, spindom: 0.1 },
-        mid: { controller: 0.5, spindom: 0.3, threesixty: 0.2 },
-        death: { closer: 0.6, firestarter: 0.2, dual: 0.2 },
-    },
-    // batting position → archetype affinities
-    positions: {
-        top: { firestarter: 0.5, controller: 0.3, threesixty: 0.2 },
-        middle: { controller: 0.4, closer: 0.3, threesixty: 0.3 },
-        lower: { closer: 0.5, dual: 0.3, firestarter: 0.2 },
-        tail: { dual: 0.5, closer: 0.3, controller: 0.2 },
-    },
-    // comfort vs spin (high = 4-5)
-    comfortSpin: { spindom: 0.5, controller: 0.3, threesixty: 0.2 },
-    // comfort vs pace (high = 4-5)
-    comfortPace: { firestarter: 0.4, closer: 0.3, threesixty: 0.3 },
+    shots: {}, phases: {}, positions: {}, comfortSpin: {}, comfortPace: {},
 };
 
 export const PHASES = [{ id: "pp", nm: "POWERPLAY (1-6)" }, { id: "mid", nm: "MIDDLE (7-16)" }, { id: "death", nm: "DEATH (17-20)" }];

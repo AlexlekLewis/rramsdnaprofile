@@ -7,6 +7,7 @@ import {
     BAT_ARCH, BWL_ARCH,
     BAT_ARCH_AFFINITY, BWL_ARCH_AFFINITY,
     BAT_SIGNAL_MAP,
+    scoreBatArchetype, scoreBwlArchetype,
 } from '../data/skillItems';
 import { FALLBACK_RW, FALLBACK_CONST, ARCHETYPE_ALIGNMENT } from '../data/fallbacks';
 
@@ -373,101 +374,69 @@ export function calcSelfAwarenessScore(sagi, constants) {
     return Math.round(Math.max(floor, Math.min(5, raw)) * 100) / 100;
 }
 
-// ═══ ARCHETYPE DNA PERCENTAGE ═══
-// Calculates what % of each batting archetype a player's profile reflects
-// Uses: coach-assigned archetype (weighted heavily), onboarding signals (shots, phases, position)
+// ═══ ARCHETYPE DNA PERCENTAGE (v3 — questionnaire-driven) ═══
+// Primary source: questionnaire answers scored via scoreArchetypeAnswers()
+// Secondary source: coach-assigned archetype (weighted heavily)
+// Fallback: equal distribution if no data
 export function calcArchetypeDNA(onboardingData, coachBatArchetype, coachBowlArchetype) {
     const batArchetypes = BAT_ARCH.map(a => a.id);
     const bowlArchetypes = BWL_ARCH.map(a => a.id);
-    const batScores = {};
-    const bowlScores = {};
-    batArchetypes.forEach(a => { batScores[a] = 0; });
-    bowlArchetypes.forEach(a => { bowlScores[a] = 0; });
-
-    // ── Coach-assigned archetype gets a heavy base (weight = 3.0) ──
-    if (coachBatArchetype && batScores[coachBatArchetype] !== undefined) {
-        batScores[coachBatArchetype] += 3.0;
-    }
-    if (coachBowlArchetype && bowlScores[coachBowlArchetype] !== undefined) {
-        bowlScores[coachBowlArchetype] += 3.0;
-    }
-
-    // ── Onboarding signal-based archetype scoring ──
-    const signals = BAT_SIGNAL_MAP;
     const data = onboardingData || {};
 
-    // Go-to shots
-    const goToShots = data.goToShots || [];
-    goToShots.forEach(shot => {
-        const affinities = signals.shots?.[shot];
-        if (affinities) {
-            Object.entries(affinities).forEach(([arch, wt]) => {
-                if (batScores[arch] !== undefined) batScores[arch] += wt;
-            });
-        }
-    });
+    // ── BATTING DNA ──
+    let batDNA = {};
+    batArchetypes.forEach(a => { batDNA[a] = 0; });
 
-    // Batting phase preference
-    const batPhases = data.batPhases || [];
-    batPhases.forEach(phase => {
-        const affinities = signals.phases?.[phase];
-        if (affinities) {
-            Object.entries(affinities).forEach(([arch, wt]) => {
-                if (batScores[arch] !== undefined) batScores[arch] += wt;
-            });
-        }
-    });
-
-    // Batting position
-    const batPos = data.batPosition;
-    if (batPos && signals.positions?.[batPos]) {
-        Object.entries(signals.positions[batPos]).forEach(([arch, wt]) => {
-            if (batScores[arch] !== undefined) batScores[arch] += wt;
-        });
+    // Layer 1: Questionnaire answers (primary signal)
+    const batAnswers = data.batArchAnswers;
+    if (Array.isArray(batAnswers) && batAnswers.length > 0) {
+        const result = scoreBatArchetype(batAnswers);
+        batArchetypes.forEach(a => { batDNA[a] = (result.scores[a] || 0) / 100 * 5.0; }); // scale to 0-5 weight
     }
 
-    // Comfort vs spin (if rated 4+)
-    if (data.comfortSpin >= 4 && signals.comfortSpin) {
-        Object.entries(signals.comfortSpin).forEach(([arch, wt]) => {
-            if (batScores[arch] !== undefined) batScores[arch] += wt;
-        });
+    // Layer 2: Coach-assigned archetype (heavy weight, always applied if present)
+    if (coachBatArchetype && batDNA[coachBatArchetype] !== undefined) {
+        batDNA[coachBatArchetype] += 3.0;
     }
 
-    // Comfort vs pace (if rated 4+)
-    if (data.comfortPace >= 4 && signals.comfortPace) {
-        Object.entries(signals.comfortPace).forEach(([arch, wt]) => {
-            if (batScores[arch] !== undefined) batScores[arch] += wt;
-        });
+    // ── BOWLING DNA ──
+    let bowlDNA = {};
+    bowlArchetypes.forEach(a => { bowlDNA[a] = 0; });
+
+    // Layer 1: Questionnaire answers
+    const bwlAnswers = data.bwlArchAnswers;
+    if (Array.isArray(bwlAnswers) && bwlAnswers.length > 0) {
+        const result = scoreBwlArchetype(bwlAnswers);
+        bowlArchetypes.forEach(a => { bowlDNA[a] = (result.scores[a] || 0) / 100 * 5.0; });
+    }
+
+    // Layer 2: Coach-assigned archetype
+    if (coachBowlArchetype && bowlDNA[coachBowlArchetype] !== undefined) {
+        bowlDNA[coachBowlArchetype] += 3.0;
     }
 
     // ── Normalise to percentages ──
-    const batTotal = Object.values(batScores).reduce((s, v) => s + v, 0);
-    const batDNA = {};
-    batArchetypes.forEach(a => {
-        batDNA[a] = batTotal > 0 ? Math.round((batScores[a] / batTotal) * 100) : 0;
-    });
-
-    const bowlTotal = Object.values(bowlScores).reduce((s, v) => s + v, 0);
-    const bowlDNA = {};
-    bowlArchetypes.forEach(a => {
-        bowlDNA[a] = bowlTotal > 0 ? Math.round((bowlScores[a] / bowlTotal) * 100) : 0;
-    });
-
-    // Ensure percentages sum to 100 (fix rounding)
-    const fixRounding = (dna) => {
+    const normalise = (dna, archetypes) => {
         const total = Object.values(dna).reduce((s, v) => s + v, 0);
-        if (total !== 100 && total > 0) {
-            const maxKey = Object.entries(dna).reduce((a, b) => b[1] > a[1] ? b : a)[0];
-            dna[maxKey] += (100 - total);
+        const pct = {};
+        archetypes.forEach(a => { pct[a] = total > 0 ? Math.round((dna[a] / total) * 100) : 0; });
+        // Fix rounding to ensure sum = 100
+        const pctTotal = Object.values(pct).reduce((s, v) => s + v, 0);
+        if (pctTotal !== 100 && pctTotal > 0) {
+            const maxKey = Object.entries(pct).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+            pct[maxKey] += (100 - pctTotal);
         }
-        return dna;
+        return pct;
     };
 
+    const batPct = normalise(batDNA, batArchetypes);
+    const bowlPct = normalise(bowlDNA, bowlArchetypes);
+
     return {
-        bat: fixRounding(batDNA),
-        bowl: fixRounding(bowlDNA),
-        primaryBat: Object.entries(batDNA).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])[0],
-        primaryBowl: Object.entries(bowlDNA).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])[0],
+        bat: batPct,
+        bowl: bowlPct,
+        primaryBat: Object.entries(batPct).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])[0],
+        primaryBowl: Object.entries(bowlPct).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])[0],
     };
 }
 

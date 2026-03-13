@@ -8,7 +8,8 @@ import {
     ROLES, BAT_ARCH, BWL_ARCH, VOICE_QS, BAT_POSITIONS,
     BATTING_PHASE_PREFS, BOWLING_PHASE_PREFS, BOWLING_SPEEDS,
     GOTO_SHOTS, PACE_VARIATIONS, SPIN_VARIATIONS, PHASES, PH_MAP,
-    IQ_ITEMS, MN_ITEMS
+    IQ_ITEMS, MN_ITEMS,
+    BAT_QUESTIONS, BWL_QUESTIONS, scoreBatArchetype, scoreBwlArchetype,
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
@@ -269,12 +270,90 @@ export default function PlayerOnboarding() {
                     })}
                 </div>
             );
-            const ArchCard = ({ arch, selected, onSelect }) => (
-                <div onClick={() => onSelect(arch.id)} style={{ ...sCard, borderLeft: `3px solid ${selected === arch.id ? arch.c : B.g200}`, background: selected === arch.id ? `${arch.c}08` : B.w, cursor: 'pointer', padding: '10px 12px', transition: 'all 0.15s' }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: selected === arch.id ? arch.c : B.nvD, fontFamily: F }}>{arch.nm}</div>
-                    <div style={{ fontSize: 9, color: B.g600, fontFamily: F, marginTop: 2 }}>{arch.sub}</div>
-                </div>
-            );
+
+            // ── Questionnaire components ──
+            const ArchQ = ({ questions, answers, onAnswer, color, label }) => {
+                const ans = answers || [];
+                const answered = ans.filter(a => a != null).length;
+                return (<div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F }}>YOUR {label} DNA</div>
+                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{answered}/{questions.length} answered</div>
+                        <div style={{ flex: 1, height: 3, background: B.g200, borderRadius: 2 }}>
+                            <div style={{ width: `${(answered / questions.length) * 100}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.3s' }} />
+                        </div>
+                    </div>
+                    {questions.map((q, qi) => (
+                        <div key={qi} style={{ marginBottom: 14, background: ans[qi] != null ? `${color}06` : 'transparent', borderRadius: 10, padding: '8px 10px', border: `1px solid ${ans[qi] != null ? `${color}30` : B.g100}`, transition: 'all 0.2s' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 6 }}>
+                                <span style={{ color, marginRight: 6 }}>{qi + 1}.</span>{q.q}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {q.opts.map((opt, oi) => (
+                                    <button key={oi} onClick={() => {
+                                        const next = [...(ans.length >= questions.length ? ans : Array(questions.length).fill(null))];
+                                        next[qi] = next[qi] === oi ? null : oi;
+                                        onAnswer(next);
+                                    }} style={{
+                                        padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${ans[qi] === oi ? color : B.g200}`,
+                                        background: ans[qi] === oi ? `${color}15` : B.w, color: ans[qi] === oi ? color : B.g700,
+                                        fontSize: 11, fontWeight: ans[qi] === oi ? 700 : 500, fontFamily: F, cursor: 'pointer',
+                                        textAlign: 'left', transition: 'all 0.15s', lineHeight: 1.4
+                                    }}>{opt.text}</button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>);
+            };
+
+            // ── Archetype reveal ──
+            const ArchReveal = ({ answers, scoreFn, archList, color }) => {
+                if (!answers || answers.filter(a => a != null).length < archList.length) return null;
+                const result = scoreFn(answers);
+                const primary = archList.find(a => a.id === result.primary);
+                const secondary = result.secondary ? archList.find(a => a.id === result.secondary) : null;
+                if (!primary) return null;
+                return (<div style={{ background: `${color}08`, border: `2px solid ${color}40`, borderRadius: 12, padding: '16px 14px', marginTop: 12, textAlign: 'center' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color, fontFamily: F, letterSpacing: 1.5, marginBottom: 4 }}>YOUR T20 DNA</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: B.nvD, fontFamily: F }}>{primary.nm}</div>
+                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginTop: 4, lineHeight: 1.5 }}>{primary.sub}</div>
+                    {secondary && <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${color}30` }}>
+                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>Secondary identity</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{secondary.nm}</div>
+                    </div>}
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+                        {archList.map(a => (<div key={a.id} style={{ flex: '1 0 0', minWidth: 50, maxWidth: 80 }}>
+                            <div style={{ height: 40, background: B.g100, borderRadius: 4, position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${result.scores[a.id] || 0}%`, background: a.id === result.primary ? color : `${color}40`, borderRadius: 4, transition: 'height 0.5s' }} />
+                            </div>
+                            <div style={{ fontSize: 7, color: B.g500, fontFamily: F, marginTop: 2, textAlign: 'center' }}>{a.nm.split(' ').pop()}</div>
+                            <div style={{ fontSize: 8, fontWeight: 700, color: a.id === result.primary ? color : B.g400, fontFamily: F, textAlign: 'center' }}>{result.scores[a.id] || 0}%</div>
+                        </div>))}
+                    </div>
+                </div>);
+            };
+
+            // Auto-compute archetype from questionnaire answers
+            const batAns = pd.batArchAnswers || [];
+            const bwlAns = pd.bwlArchAnswers || [];
+            const batComplete = batAns.filter(a => a != null).length === BAT_QUESTIONS.length;
+            const bwlComplete = bwlAns.filter(a => a != null).length === BWL_QUESTIONS.length;
+
+            // Auto-set computed archetype when questionnaire is complete
+            if (batComplete && !pd._batArchComputed) {
+                const r = scoreBatArchetype(batAns);
+                pu('playerBatArch', r.primary);
+                pu('playerBatArchSecondary', r.secondary);
+                pu('_batArchComputed', true);
+            }
+            if (bwlComplete && hasBowling && !pd._bwlArchComputed) {
+                const r = scoreBwlArchetype(bwlAns);
+                pu('playerBwlArch', r.primary);
+                pu('playerBwlArchSecondary', r.secondary);
+                pu('_bwlArchComputed', true);
+            }
+
             return (<div>
                 <div style={sCard}>
                     <SecH title="Playing Style" />
@@ -317,8 +396,13 @@ export default function PlayerOnboarding() {
                             <Dots value={pd.shortBallComfort} onChange={v => pu('shortBallComfort', v)} color={B.pk} />
                         </div>
                     </div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: B.pk, fontFamily: F, marginTop: 12, marginBottom: 6 }}>Which batting archetype best describes you?</div>
-                    {BAT_ARCH.map(a => <ArchCard key={a.id} arch={a} selected={pd.playerBatArch} onSelect={v => pu('playerBatArch', v)} />)}
+                </div>
+
+                {/* ═══ BATTING ARCHETYPE QUESTIONNAIRE ═══ */}
+                <div style={{ ...sCard, borderLeft: `3px solid ${B.pk}` }}>
+                    <SecH title="Find Your Batting DNA" sub="Answer these questions honestly — there are no wrong answers. We'll work out your batting identity from your responses." />
+                    <ArchQ questions={BAT_QUESTIONS} answers={pd.batArchAnswers} onAnswer={v => { pu('batArchAnswers', v); pu('_batArchComputed', false); }} color={B.pk} label="BATTING" />
+                    <ArchReveal answers={pd.batArchAnswers} scoreFn={scoreBatArchetype} archList={BAT_ARCH} color={B.pk} />
                 </div>
 
                 {/* ═══ BOWLING IDENTITY (only if role includes bowling) ═══ */}
@@ -339,8 +423,13 @@ export default function PlayerOnboarding() {
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4 }}>Which deliveries do you have in your toolkit?</div>
                     <ChipSelect options={isPace ? PACE_VARIATIONS : SPIN_VARIATIONS} selected={pd.bwlVariations} onToggle={v => pu('bwlVariations', v)} color={B.bl} />
                     <Inp label="Shut-Down Delivery" value={pd.shutdownDelivery} onChange={v => pu('shutdownDelivery', v)} ph="What's your go-to delivery under pressure?" />
-                    <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F, marginTop: 12, marginBottom: 6 }}>Which bowling archetype best describes you?</div>
-                    {BWL_ARCH.map(a => <ArchCard key={a.id} arch={a} selected={pd.playerBwlArch} onSelect={v => pu('playerBwlArch', v)} />)}
+                </div>}
+
+                {/* ═══ BOWLING ARCHETYPE QUESTIONNAIRE ═══ */}
+                {hasBowling && <div style={{ ...sCard, borderLeft: `3px solid ${B.bl}` }}>
+                    <SecH title="Find Your Bowling DNA" sub="Answer these questions honestly — we'll work out your bowling identity from your responses." />
+                    <ArchQ questions={BWL_QUESTIONS} answers={pd.bwlArchAnswers} onAnswer={v => { pu('bwlArchAnswers', v); pu('_bwlArchComputed', false); }} color={B.bl} label="BOWLING" />
+                    <ArchReveal answers={pd.bwlArchAnswers} scoreFn={scoreBwlArchetype} archList={BWL_ARCH} color={B.bl} />
                 </div>}
 
                 {/* ═══ ABOUT YOU ═══ */}

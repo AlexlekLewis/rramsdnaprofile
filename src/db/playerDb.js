@@ -62,6 +62,8 @@ export async function loadPlayersFromDB() {
             bwlVariations: p.bowling_variations,
             spinComfort: p.spin_comfort, shortBallComfort: p.short_ball_comfort,
             playerBatArch: p.player_bat_archetype, playerBwlArch: p.player_bwl_archetype,
+            batArchAnswers: p.bat_arch_answers, bwlArchAnswers: p.bwl_arch_answers,
+            playerBatArchSecondary: p.bat_arch_secondary, playerBwlArchSecondary: p.bwl_arch_secondary,
             onboardingProgress: p.onboarding_progress, profileVersion: p.profile_version || 1,
         };
     });
@@ -100,6 +102,10 @@ export async function savePlayerToDB(pd, authUserId) {
         short_ball_comfort: pd.shortBallComfort ? +pd.shortBallComfort : null,
         player_bat_archetype: pd.playerBatArch || null,
         player_bwl_archetype: pd.playerBwlArch || null,
+        bat_arch_answers: pd.batArchAnswers || null,
+        bwl_arch_answers: pd.bwlArchAnswers || null,
+        bat_arch_secondary: pd.playerBatArchSecondary || null,
+        bwl_arch_secondary: pd.playerBwlArchSecondary || null,
         onboarding_progress: pd.onboardingProgress || null,
         profile_version: 2,
     };

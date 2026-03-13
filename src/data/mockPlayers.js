@@ -8,7 +8,7 @@ export const MOCK = [
             { level: "local_j1", ageGroup: "U14", shield: "Shield 1", team: "Doncaster U14", association: "ECA", matches: "12", batInn: "10", runs: "285", hs: "67", avg: "28.5", bowlInn: "12", overs: "68", wkts: "24", sr: "17.0", bAvg: "17.9", econ: "6.32", ct: "6", ro: "2", st: "", format: "" },
             { level: "local_j2", ageGroup: "U16", shield: "Shield 2", team: "Doncaster U16", association: "ECA", matches: "6", batInn: "5", runs: "98", hs: "34", avg: "16.3", bowlInn: "6", overs: "32", wkts: "11", sr: "17.5", bAvg: "16.9", econ: "5.81", ct: "3", ro: "0", st: "", format: "" }],
         injury: "Mild lower back stiffness", goals: "Dowling Shield selection & death bowling", submitted: true,
-        cd: { batA: "dual", bwlA: "hunter", t1_0: 4, t1_1: 3, t1_2: 4, t1_3: 3, t1_4: 3, t1_5: 2, t1_6: 3, t1_7: 4, t1_8: 3, t1_9: 3, t2_0: 3, t2_1: 3, t2_2: 3, t2_3: 2, t2_4: 3, t2_5: 2, iq_0: 3, iq_1: 3, iq_2: 2, iq_3: 3, iq_4: 3, iq_5: 3, mn_0: 4, mn_1: 4, mn_2: 3, mn_3: 4, mn_4: 3, mn_5: 4, mn_6: 3, ph_0: 4, ph_1: 3, ph_2: 3, ph_3: 3, ph_4: 3 }
+        cd: { batA: "tempo", bwlA: "newball", t1_0: 4, t1_1: 3, t1_2: 4, t1_3: 3, t1_4: 3, t1_5: 2, t1_6: 3, t1_7: 4, t1_8: 3, t1_9: 3, t2_0: 3, t2_1: 3, t2_2: 3, t2_3: 2, t2_4: 3, t2_5: 2, iq_0: 3, iq_1: 3, iq_2: 2, iq_3: 3, iq_4: 3, iq_5: 3, mn_0: 4, mn_1: 4, mn_2: 3, mn_3: 4, mn_4: 3, mn_5: 4, mn_6: 3, ph_0: 4, ph_1: 3, ph_2: 3, ph_3: 3, ph_4: 3 }
     },
     {
         id: "p2", name: "Maya Chen", dob: "22/07/2010", club: "Fitzroy Doncaster CC", assoc: "Premier Cricket", role: "batter", bat: "Left-Hand Bat", bowl: "Right-Arm Offspin",

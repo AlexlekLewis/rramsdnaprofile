@@ -294,7 +294,7 @@ describe('calcSelfAwarenessScore', () => {
 });
 
 
-// ───────── calcArchetypeDNA ─────────
+// ───────── calcArchetypeDNA (v3 — questionnaire-driven) ─────────
 describe('calcArchetypeDNA', () => {
     it('returns bat and bowl percentage objects', () => {
         const result = calcArchetypeDNA({}, null, null);
@@ -302,10 +302,11 @@ describe('calcArchetypeDNA', () => {
         expect(result).toHaveProperty('bowl');
     });
 
-    it('bat percentages sum to 100 when signals exist', () => {
+    it('bat percentages sum to 100 when questionnaire answers exist', () => {
+        // Answer all 12 batting questions with option 0 (enforcer-heavy)
         const result = calcArchetypeDNA(
-            { goToShots: ['Drive', 'Pull', 'Lofted Hit'], batPhases: ['pp'], batPosition: 'top' },
-            'firestarter',
+            { batArchAnswers: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+            'enforcer',
             null
         );
         const total = Object.values(result.bat).reduce((s, v) => s + v, 0);
@@ -313,43 +314,37 @@ describe('calcArchetypeDNA', () => {
     });
 
     it('coach-assigned archetype gets highest percentage', () => {
-        const result = calcArchetypeDNA({}, 'controller', null);
-        expect(result.bat.controller).toBeGreaterThan(0);
-        expect(result.primaryBat).toBe('controller');
+        const result = calcArchetypeDNA({}, 'tempo', null);
+        expect(result.bat.tempo).toBeGreaterThan(0);
+        expect(result.primaryBat).toBe('tempo');
     });
 
-    it('shot selections influence archetype blend', () => {
-        const result360 = calcArchetypeDNA(
-            { goToShots: ['Ramp / Scoop', 'Switch Hit', 'Reverse Sweep', 'Lap / Paddle'] },
-            null,
-            null
-        );
-        // 360-style shots should push threesixty to be the highest or near highest
-        expect(result360.bat.threesixty).toBeGreaterThan(0);
+    it('questionnaire answers influence archetype blend', () => {
+        // Choose answers that heavily favour innovator (option index 3 or similar)
+        // Q1=1(mid=tempo/innovator), Q3=3(surprise=innovator), Q4=3(unexpected=innovator), Q6=2(scoop=innovator), Q7=3(creative=innovator)
+        const innovatorAnswers = [1, 3, 3, 3, 3, 2, 3, 3, 1, 3, 4, 2];
+        const result = calcArchetypeDNA({ batArchAnswers: innovatorAnswers }, null, null);
+        expect(result.bat.innovator).toBeGreaterThan(0);
+        expect(result.primaryBat).toBe('innovator');
     });
 
-    it('phase preference influences archetype', () => {
-        const result = calcArchetypeDNA(
-            { batPhases: ['death'] },
-            null,
-            null
-        );
-        expect(result.bat.closer).toBeGreaterThan(0);
+    it('bowling archetype works independently with coach selection', () => {
+        const result = calcArchetypeDNA({}, null, 'spinctrl');
+        expect(result.bowl.spinctrl).toBeGreaterThan(0);
+        expect(result.primaryBowl).toBe('spinctrl');
     });
 
-    it('bowling archetype works independently', () => {
-        const result = calcArchetypeDNA({}, null, 'weapon');
-        expect(result.bowl.weapon).toBeGreaterThan(0);
-        expect(result.primaryBowl).toBe('weapon');
+    it('bowling questionnaire answers identify death closer', () => {
+        // Answers that favour deathclose: Q1=2, Q2=3, Q3=3, Q4=3, Q6=0, Q7=3
+        const deathAnswers = [2, 3, 3, 3, 3, 0, 3, 3, 3, 3, 3, 2];
+        const result = calcArchetypeDNA({ bwlArchAnswers: deathAnswers }, null, null);
+        expect(result.bowl.deathclose).toBeGreaterThan(0);
     });
 
-    it('comfort vs spin boosts spindom archetype', () => {
-        const result = calcArchetypeDNA(
-            { comfortSpin: 5 },
-            null,
-            null
-        );
-        expect(result.bat.spindom).toBeGreaterThan(0);
+    it('empty questionnaire answers return zeroes gracefully', () => {
+        const result = calcArchetypeDNA({}, null, null);
+        const batTotal = Object.values(result.bat).reduce((s, v) => s + v, 0);
+        expect(batTotal).toBe(0);
     });
 });
 
