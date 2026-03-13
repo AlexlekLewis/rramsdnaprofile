@@ -726,8 +726,8 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
         d.s100 = s100;
         if (d.r > 0) { pdiSum += d.css * d.wt; pdiWeightSum += d.wt; }
     });
-    const pdi = pdiWeightSum > 0 ? Math.round((pdiSum / pdiWeightSum) * 100) / 100 : 0;
-    const pdiPct = pdi > 0 ? Math.round((pdi / 5) * 100) : 0;
+    const pdi = pdiWeightSum > 0 ? Math.min(5, Math.round((pdiSum / pdiWeightSum) * 100) / 100) : 0;
+    const pdiPct = pdi > 0 ? Math.min(100, Math.round((pdi / 5) * 100)) : 0;
     const cp = ti > 0 ? Math.round(tr / ti * 100) : 0;
 
     let g = "—", gc = B.g400;
