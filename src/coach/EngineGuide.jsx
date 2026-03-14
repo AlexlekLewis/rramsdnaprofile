@@ -1,5 +1,5 @@
 // ═══ ENGINE GUIDE — Plain-English explainer for coaches ═══
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { B, F, sGrad } from '../data/theme';
 import { FALLBACK_RW } from '../data/fallbacks';
 
@@ -87,6 +87,25 @@ function Card({ children, style }) {
 
 export default function EngineGuide({ onClose }) {
     const [activeTab, setActiveTab] = useState('overview');
+    const modalRef = useRef(null);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') { onClose(); return; }
+            if (e.key === 'Tab' && modalRef.current) {
+                const focusable = modalRef.current.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        modalRef.current?.querySelector('button')?.focus();
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
+
     const tabs = [
         { id: 'overview', label: 'Overview', icon: '📋' },
         { id: 'pillars', label: '8 Pillars', icon: '🏛️' },
@@ -103,7 +122,7 @@ export default function EngineGuide({ onClose }) {
         }}
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-            <div style={{
+            <div ref={modalRef} style={{
                 width: '100%', maxWidth: 640,
                 background: `linear-gradient(135deg, ${B.nvD} 0%, #1a2744 50%, ${B.nv} 100%)`,
                 borderRadius: 16, overflow: 'hidden',

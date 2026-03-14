@@ -32,7 +32,7 @@ export default function Journal({ session, userProfile }) {
         }).finally(() => {
             setLoading(false);
         });
-    }, [userProfile]);
+    }, [userProfile?.id]);
 
     const activeSess = recentSessions.find(s => s.id === selectedSessId);
     const questions = activeSess?.journal_questions?.length > 0

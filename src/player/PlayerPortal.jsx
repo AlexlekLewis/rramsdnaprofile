@@ -11,6 +11,7 @@ export default function PlayerPortal() {
     const [view, setView] = useState("home"); // home | journal | idp
     const [recentAtt, setRecentAtt] = useState([]);
     const [playerId, setPlayerId] = useState(null);
+    const [programInfo, setProgramInfo] = useState(null);
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -33,6 +34,11 @@ export default function PlayerPortal() {
             } catch (err) {
                 console.error("Error loading player dashboard data:", err);
             }
+            try {
+                const { data: member } = await supabase.from('program_members').select('role, season').eq('auth_user_id', session.user.id).eq('active', true).single();
+                const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).single();
+                if (!cancelled && (member || program)) setProgramInfo({ programName: program?.name || null, season: member?.season || program?.season || null });
+            } catch {}
         }
         fetchData();
         return () => { cancelled = true; };
@@ -94,12 +100,12 @@ export default function PlayerPortal() {
                         <div style={{ display: 'flex', gap: 12 }}>
                             <div style={{ background: "rgba(255,255,255,0.1)", padding: '6px 12px', borderRadius: 8, backdropFilter: 'blur(10px)' }}>
                                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>PROGRAM</div>
-                                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>Elite Academy</div>
+                                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>{programInfo?.programName || 'RRAM Academy'}</div>
                             </div>
-                            <div style={{ background: "rgba(255,255,255,0.1)", padding: '6px 12px', borderRadius: 8, backdropFilter: 'blur(10px)' }}>
-                                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>PHASE</div>
-                                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>Development</div>
-                            </div>
+                            {programInfo?.season && <div style={{ background: "rgba(255,255,255,0.1)", padding: '6px 12px', borderRadius: 8, backdropFilter: 'blur(10px)' }}>
+                                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>SEASON</div>
+                                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>{programInfo.season}</div>
+                            </div>}
                         </div>
                     </div>
                 </div>
@@ -136,7 +142,7 @@ export default function PlayerPortal() {
                                         <div style={{ fontSize: 10, color: B.g400, fontFamily: F }}>{att.sessions?.session_date ? new Date(att.sessions.session_date).toLocaleDateString() : ''}</div>
                                     </div>
                                     <span style={{ fontSize: 10, fontWeight: 800, padding: "4px 8px", borderRadius: 4, background: att.status === 'present' ? `${B.grn}20` : att.status === 'excused' ? `${B.amb}20` : `${B.pk}20`, color: att.status === 'present' ? B.grn : att.status === 'excused' ? '#b45309' : B.red, fontFamily: F }}>
-                                        {att.status.toUpperCase()}
+                                        {(att.status || 'unknown').toUpperCase()}
                                     </span>
                                 </div>
                             ))}

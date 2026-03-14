@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { loadGoalsForPlayer, addGoal, updateGoalProgress, loadFocusAreas, loadNotes, addNote } from "../db/idpDb";
 import { B, F, sCard } from "../data/theme";
 
@@ -13,6 +13,7 @@ export default function IDPView({ session, userProfile }) {
     const [savingGoal, setSavingGoal] = useState(false);
     const [savingNote, setSavingNote] = useState(false);
     const [feedback, setFeedback] = useState(null); // { type: 'ok'|'err', text }
+    const progressTimerRef = useRef(null);
 
     // Program selector (defaults to null meaning all programs)
     const programId = null;
@@ -30,7 +31,7 @@ export default function IDPView({ session, userProfile }) {
             setNotes(n || []);
         }).catch(err => console.error("Error loading IDP:", err))
             .finally(() => setLoading(false));
-    }, [userProfile]);
+    }, [userProfile?.id]);
 
     const handleAddGoal = async () => {
         if (!newGoal.trim() || savingGoal) return;
@@ -54,12 +55,16 @@ export default function IDPView({ session, userProfile }) {
         } finally { setSavingGoal(false); }
     };
 
-    const handleUpdateProgress = async (id, val) => {
-        try {
-            const updated = await updateGoalProgress(id, val);
-            setGoals(goals.map(g => g.id === id ? updated : g));
-        } catch (e) { console.error(e); }
-    };
+    const handleUpdateProgress = useCallback((id, val) => {
+        setGoals(prev => prev.map(g => g.id === id ? { ...g, progress: val } : g));
+        if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = setTimeout(async () => {
+            try {
+                const updated = await updateGoalProgress(id, val);
+                setGoals(prev => prev.map(g => g.id === id ? updated : g));
+            } catch (e) { console.error(e); }
+        }, 500);
+    }, []);
 
     const handleAddNote = async () => {
         if (!newNote.trim() || savingNote) return;
@@ -123,7 +128,7 @@ export default function IDPView({ session, userProfile }) {
                             <div key={g.id} style={{ padding: 12, border: `1px solid ${B.g200}`, borderRadius: 8, background: B.g50 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                                     <div style={{ fontSize: 13, fontWeight: 600, color: B.nv, fontFamily: F }}>{g.title}</div>
-                                    <div style={{ fontSize: 10, fontWeight: 700, color: g.status === 'completed' ? B.grn : B.g400 }}>{g.status.toUpperCase()}</div>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: g.status === 'completed' ? B.grn : B.g400 }}>{(g.status || 'active').toUpperCase()}</div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                     <input

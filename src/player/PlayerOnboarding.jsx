@@ -28,6 +28,80 @@ import {
 } from "../shared/FormComponents";
 import { useSessionState } from "../shared/useSessionState";
 
+// ── Extracted to module scope to avoid re-creation on every render ──
+const ChipSelect = ({ options, selected, onToggle, color }) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, marginBottom: 8 }}>
+        {options.map(o => {
+            const sel = (selected || []).includes(typeof o === 'string' ? o : o.id); return (
+                <button key={typeof o === 'string' ? o : o.id} onClick={() => { const id = typeof o === 'string' ? o : o.id; const cur = selected || []; onToggle(sel ? cur.filter(x => x !== id) : [...cur, id]); }}
+                    style={{ padding: '6px 12px', borderRadius: 20, border: `1.5px solid ${sel ? color : B.g200}`, background: sel ? `${color}18` : B.w, color: sel ? color : B.g600, fontSize: 10, fontWeight: sel ? 700 : 500, fontFamily: F, cursor: 'pointer', transition: 'all 0.15s' }}
+                >{typeof o === 'string' ? o : `${o.icon || ''} ${o.label}`.trim()}</button>
+            );
+        })}
+    </div>
+);
+
+const ArchQ = ({ questions, answers, onAnswer, color, label }) => {
+    const ans = answers || [];
+    const answered = ans.filter(a => a != null).length;
+    return (<div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F }}>YOUR {label} DNA</div>
+            <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{answered}/{questions.length} answered</div>
+            <div style={{ flex: 1, height: 3, background: B.g200, borderRadius: 2 }}>
+                <div style={{ width: `${(answered / questions.length) * 100}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.3s' }} />
+            </div>
+        </div>
+        {questions.map((q, qi) => (
+            <div key={qi} style={{ marginBottom: 14, background: ans[qi] != null ? `${color}06` : 'transparent', borderRadius: 10, padding: '8px 10px', border: `1px solid ${ans[qi] != null ? `${color}30` : B.g100}`, transition: 'all 0.2s' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 6 }}>
+                    <span style={{ color, marginRight: 6 }}>{qi + 1}.</span>{q.q}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {q.opts.map((opt, oi) => (
+                        <button key={oi} onClick={() => {
+                            const next = [...(ans.length >= questions.length ? ans : Array(questions.length).fill(null))];
+                            next[qi] = next[qi] === oi ? null : oi;
+                            onAnswer(next);
+                        }} style={{
+                            padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${ans[qi] === oi ? color : B.g200}`,
+                            background: ans[qi] === oi ? `${color}15` : B.w, color: ans[qi] === oi ? color : B.g700,
+                            fontSize: 11, fontWeight: ans[qi] === oi ? 700 : 500, fontFamily: F, cursor: 'pointer',
+                            textAlign: 'left', transition: 'all 0.15s', lineHeight: 1.4
+                        }}>{opt.text}</button>
+                    ))}
+                </div>
+            </div>
+        ))}
+    </div>);
+};
+
+const ArchReveal = ({ answers, scoreFn, archList, color, qCount }) => {
+    if (!answers || answers.filter(a => a != null).length < qCount) return null;
+    const result = scoreFn(answers);
+    const primary = archList.find(a => a.id === result.primary);
+    const secondary = result.secondary ? archList.find(a => a.id === result.secondary) : null;
+    if (!primary) return null;
+    return (<div style={{ background: `${color}08`, border: `2px solid ${color}40`, borderRadius: 12, padding: '16px 14px', marginTop: 12, textAlign: 'center' }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color, fontFamily: F, letterSpacing: 1.5, marginBottom: 4 }}>YOUR T20 DNA</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: B.nvD, fontFamily: F }}>{primary.nm}</div>
+        <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginTop: 4, lineHeight: 1.5 }}>{primary.sub}</div>
+        {secondary && <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${color}30` }}>
+            <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>Secondary identity</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{secondary.nm}</div>
+        </div>}
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+            {archList.map(a => (<div key={a.id} style={{ flex: '1 0 0', minWidth: 50, maxWidth: 80 }}>
+                <div style={{ height: 40, background: B.g100, borderRadius: 4, position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${result.scores[a.id] || 0}%`, background: a.id === result.primary ? color : `${color}40`, borderRadius: 4, transition: 'height 0.5s' }} />
+                </div>
+                <div style={{ fontSize: 7, color: B.g500, fontFamily: F, marginTop: 2, textAlign: 'center' }}>{a.nm.split(' ').pop()}</div>
+                <div style={{ fontSize: 8, fontWeight: 700, color: a.id === result.primary ? color : B.g400, fontFamily: F, textAlign: 'center' }}>{result.scores[a.id] || 0}%</div>
+            </div>))}
+        </div>
+    </div>);
+};
+
 export default function PlayerOnboarding() {
     const { session, signOut, portal } = useAuth();
     const { compTiers, assocList, assocComps, vmcuAssocs } = useEngine();
@@ -39,6 +113,7 @@ export default function PlayerOnboarding() {
     const pu = (k, v) => setPd(d => ({ ...d, [k]: v }));
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
+    const [stepError, setStepError] = useState('');
 
     const stepStartRef = useRef(Date.now());
 
@@ -77,9 +152,28 @@ export default function PlayerOnboarding() {
     };
     const dobInvalid = pd.dob && !isValidDob(pd.dob);
 
+    // ── Step validation ──
+    const validateStep = (step) => {
+        if (step === 0) {
+            if (!pd.name?.trim()) return 'Please enter your full name';
+            if (!isValidDob(pd.dob)) return 'Please enter a valid date of birth (DD/MM/YYYY)';
+        }
+        if (step === 1) {
+            const gs = pd.grades || [{}];
+            if (!gs[0]?.level) return 'Please select at least one competition level';
+        }
+        if (step === 2) {
+            if (!pd.role) return 'Please select your primary role';
+            if (!pd.primarySkill) return 'Please select your primary skill';
+        }
+        return null;
+    };
+
     // ── Onboarding step timer ──
     const advanceStep = (next) => {
-        if (pStep === 0 && (!pd.name || !isValidDob(pd.dob))) return;
+        const err = validateStep(pStep);
+        if (err) { setStepError(err); return; }
+        setStepError('');
         const elapsed = Date.now() - stepStartRef.current;
         const progress = pd.onboardingProgress || { steps: {}, totalTimeMs: 0, lastStepReached: 0 };
         progress.steps[pStep] = { completed: true, durationMs: elapsed, completedAt: new Date().toISOString() };
@@ -270,81 +364,6 @@ export default function PlayerOnboarding() {
         }
 
         if (pStep === 2) {
-            const ChipSelect = ({ options, selected, onToggle, color }) => (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, marginBottom: 8 }}>
-                    {options.map(o => {
-                        const sel = (selected || []).includes(typeof o === 'string' ? o : o.id); return (
-                            <button key={typeof o === 'string' ? o : o.id} onClick={() => { const id = typeof o === 'string' ? o : o.id; const cur = selected || []; onToggle(sel ? cur.filter(x => x !== id) : [...cur, id]); }}
-                                style={{ padding: '6px 12px', borderRadius: 20, border: `1.5px solid ${sel ? color : B.g200}`, background: sel ? `${color}18` : B.w, color: sel ? color : B.g600, fontSize: 10, fontWeight: sel ? 700 : 500, fontFamily: F, cursor: 'pointer', transition: 'all 0.15s' }}
-                            >{typeof o === 'string' ? o : `${o.icon || ''} ${o.label}`.trim()}</button>
-                        );
-                    })}
-                </div>
-            );
-
-            // ── Questionnaire components ──
-            const ArchQ = ({ questions, answers, onAnswer, color, label }) => {
-                const ans = answers || [];
-                const answered = ans.filter(a => a != null).length;
-                return (<div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F }}>YOUR {label} DNA</div>
-                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{answered}/{questions.length} answered</div>
-                        <div style={{ flex: 1, height: 3, background: B.g200, borderRadius: 2 }}>
-                            <div style={{ width: `${(answered / questions.length) * 100}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.3s' }} />
-                        </div>
-                    </div>
-                    {questions.map((q, qi) => (
-                        <div key={qi} style={{ marginBottom: 14, background: ans[qi] != null ? `${color}06` : 'transparent', borderRadius: 10, padding: '8px 10px', border: `1px solid ${ans[qi] != null ? `${color}30` : B.g100}`, transition: 'all 0.2s' }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 6 }}>
-                                <span style={{ color, marginRight: 6 }}>{qi + 1}.</span>{q.q}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                {q.opts.map((opt, oi) => (
-                                    <button key={oi} onClick={() => {
-                                        const next = [...(ans.length >= questions.length ? ans : Array(questions.length).fill(null))];
-                                        next[qi] = next[qi] === oi ? null : oi;
-                                        onAnswer(next);
-                                    }} style={{
-                                        padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${ans[qi] === oi ? color : B.g200}`,
-                                        background: ans[qi] === oi ? `${color}15` : B.w, color: ans[qi] === oi ? color : B.g700,
-                                        fontSize: 11, fontWeight: ans[qi] === oi ? 700 : 500, fontFamily: F, cursor: 'pointer',
-                                        textAlign: 'left', transition: 'all 0.15s', lineHeight: 1.4
-                                    }}>{opt.text}</button>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>);
-            };
-
-            // ── Archetype reveal ──
-            const ArchReveal = ({ answers, scoreFn, archList, color, qCount }) => {
-                if (!answers || answers.filter(a => a != null).length < qCount) return null;
-                const result = scoreFn(answers);
-                const primary = archList.find(a => a.id === result.primary);
-                const secondary = result.secondary ? archList.find(a => a.id === result.secondary) : null;
-                if (!primary) return null;
-                return (<div style={{ background: `${color}08`, border: `2px solid ${color}40`, borderRadius: 12, padding: '16px 14px', marginTop: 12, textAlign: 'center' }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, color, fontFamily: F, letterSpacing: 1.5, marginBottom: 4 }}>YOUR T20 DNA</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: B.nvD, fontFamily: F }}>{primary.nm}</div>
-                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginTop: 4, lineHeight: 1.5 }}>{primary.sub}</div>
-                    {secondary && <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${color}30` }}>
-                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>Secondary identity</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{secondary.nm}</div>
-                    </div>}
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-                        {archList.map(a => (<div key={a.id} style={{ flex: '1 0 0', minWidth: 50, maxWidth: 80 }}>
-                            <div style={{ height: 40, background: B.g100, borderRadius: 4, position: 'relative', overflow: 'hidden' }}>
-                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${result.scores[a.id] || 0}%`, background: a.id === result.primary ? color : `${color}40`, borderRadius: 4, transition: 'height 0.5s' }} />
-                            </div>
-                            <div style={{ fontSize: 7, color: B.g500, fontFamily: F, marginTop: 2, textAlign: 'center' }}>{a.nm.split(' ').pop()}</div>
-                            <div style={{ fontSize: 8, fontWeight: 700, color: a.id === result.primary ? color : B.g400, fontFamily: F, textAlign: 'center' }}>{result.scores[a.id] || 0}%</div>
-                        </div>))}
-                    </div>
-                </div>);
-            };
-
             // Auto-compute archetype from questionnaire answers
             const batAns = pd.batArchAnswers || [];
             const bwlAns = pd.bwlArchAnswers || [];
@@ -680,7 +699,10 @@ export default function PlayerOnboarding() {
             </div>
         </div>}
 
-        <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...getDkWrap() }}>{renderP()}</div>
+        <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...getDkWrap() }}>
+            {stepError && <div style={{ padding: '10px 14px', marginBottom: 8, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: F }}>{stepError}</div>}
+            {renderP()}
+        </div>
 
         {pStep < 7 && <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", zIndex: 100 }}>
             <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else signOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>

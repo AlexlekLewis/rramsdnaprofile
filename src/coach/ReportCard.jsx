@@ -82,7 +82,7 @@ const RadarChart = ({ domains, size = 240 }) => {
 };
 
 // ═══ REPORT CARD COMPONENT ═══
-export default function ReportCard({ player, assessment, engine, onClose }) {
+export default function ReportCard({ player, assessment, engine }) {
     const { name, dob, club, role, playerBatArch, playerBwlArch, gotoShots, pressureShot, bwlVariations, spinComfort, shortBallComfort, heightCm } = player || {};
     const { overall, pathway, cohort, agePct, grade, pdi, domains, strengths, growthAreas, sagi, phaseScores, narrative, plan, squad } = engine || {};
     const batArch = BAT_ARCH.find(a => a.id === playerBatArch);
@@ -106,7 +106,7 @@ export default function ReportCard({ player, assessment, engine, onClose }) {
                 <div style={topBar}>
                     <img src={LOGO} alt="RRA" style={{ height: 36 }} crossOrigin="anonymous" />
                     <div style={{ fontSize: 18, fontWeight: 800, color: B.nvD, letterSpacing: 1.5, textTransform: 'uppercase' }}>DNA Development Report</div>
-                    <div style={{ fontSize: 10, color: B.g400 }}>Season 2026</div>
+                    <div style={{ fontSize: 10, color: B.g400 }}>Season {new Date().getFullYear()}</div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 24 }}>
