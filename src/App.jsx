@@ -22,6 +22,7 @@ function MainApp() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [showLoginPw, setShowLoginPw] = useState(false);
 
   // ═══ REGISTRATION STATE ═══
   const [showRegister, setShowRegister] = useState(!!joinRole);
@@ -29,6 +30,8 @@ function MainApp() {
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
+  const [showRegPw, setShowRegPw] = useState(false);
+  const [showRegConfirmPw, setShowRegConfirmPw] = useState(false);
 
   const handleLogin = async () => {
     if (!loginUsername || !loginPassword) {
@@ -94,6 +97,17 @@ function MainApp() {
     fontFamily: F, outline: "none", boxSizing: 'border-box', marginBottom: 8, letterSpacing: 0.5,
   });
 
+  const EyeToggle = ({ show, onToggle }) => (
+    <button type="button" onClick={onToggle} aria-label={show ? 'Hide password' : 'Show password'}
+      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center' }}>
+      {show ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      )}
+    </button>
+  );
+
   if (!portal) return (
     <div style={{ minHeight: "100vh", ...sGrad, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <img src={LOGO} alt="" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.3))" }} />
@@ -111,11 +125,17 @@ function MainApp() {
             placeholder="Full Name" autoFocus autoCapitalize="words" style={inputStyle(authError)} />
           <input type="text" value={regUsername} onChange={e => { setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '')); setAuthError(''); }}
             placeholder="Username" autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
-          <input type="password" value={regPassword} onChange={e => { setRegPassword(e.target.value); setAuthError(''); }}
-            placeholder="Password (min 6 characters)" style={inputStyle(authError)} />
-          <input type="password" value={regConfirm} onChange={e => { setRegConfirm(e.target.value); setAuthError(''); }}
-            onKeyDown={e => e.key === 'Enter' && handleRegister()}
-            placeholder="Confirm Password" style={inputStyle(authError)} />
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input type={showRegPw ? 'text' : 'password'} value={regPassword} onChange={e => { setRegPassword(e.target.value); setAuthError(''); }}
+              placeholder="Password (min 6 characters)" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <EyeToggle show={showRegPw} onToggle={() => setShowRegPw(v => !v)} />
+          </div>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input type={showRegConfirmPw ? 'text' : 'password'} value={regConfirm} onChange={e => { setRegConfirm(e.target.value); setAuthError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleRegister()}
+              placeholder="Confirm Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <EyeToggle show={showRegConfirmPw} onToggle={() => setShowRegConfirmPw(v => !v)} />
+          </div>
           {authError && <div style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
           <button onClick={handleRegister}
             style={{ width: "100%", marginTop: 4, padding: "14px 20px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: "pointer", letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
@@ -146,9 +166,12 @@ function MainApp() {
           </div>
           <input type="text" value={loginUsername} onChange={e => { setLoginUsername(e.target.value); setAuthError(''); }}
             placeholder="Username" autoFocus autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
-          <input type="password" value={loginPassword} onChange={e => { setLoginPassword(e.target.value); setAuthError(''); }}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="Password" style={inputStyle(authError)} />
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input type={showLoginPw ? 'text' : 'password'} value={loginPassword} onChange={e => { setLoginPassword(e.target.value); setAuthError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              placeholder="Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <EyeToggle show={showLoginPw} onToggle={() => setShowLoginPw(v => !v)} />
+          </div>
           {authError && <div style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
           <button onClick={handleLogin}
             style={{ width: "100%", marginTop: 4, padding: "14px 20px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: "pointer", letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
@@ -156,7 +179,13 @@ function MainApp() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
             SIGN IN
           </button>
-          <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <a href="/login-instructions.html" target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: F, textDecoration: 'underline', cursor: 'pointer' }}>
+              Login Instructions
+            </a>
+          </div>
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
             <span onClick={() => switchToRegister('player')}
               style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
               New player? Register here
