@@ -26,7 +26,7 @@ export default function PlayerPortal() {
                     .eq('submitted', true)
                     .order('created_at', { ascending: false })
                     .limit(1)
-                    .single();
+                    .maybeSingle();
                 if (cancelled || !playerRow) return;
                 setPlayerId(playerRow.id);
                 const att = await loadAttendanceForPlayer(playerRow.id);
@@ -35,8 +35,8 @@ export default function PlayerPortal() {
                 console.error("Error loading player dashboard data:", err);
             }
             try {
-                const { data: member } = await supabase.from('program_members').select('role, season').eq('auth_user_id', session.user.id).eq('active', true).single();
-                const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).single();
+                const { data: member } = await supabase.from('program_members').select('role, season').eq('auth_user_id', session.user.id).eq('active', true).maybeSingle();
+                const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).maybeSingle();
                 if (!cancelled && (member || program)) setProgramInfo({ programName: program?.name || null, season: member?.season || program?.season || null });
             } catch {}
         }

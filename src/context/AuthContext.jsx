@@ -23,9 +23,11 @@ const JOIN_PARAM = typeof window !== 'undefined'
 const VALID_JOIN_ROLES = ['player', 'coach'];
 const INITIAL_JOIN_ROLE = VALID_JOIN_ROLES.includes(JOIN_PARAM) ? JOIN_PARAM : null;
 
+const DEV_UUID = '00000000-0000-0000-0000-00000000de00';
+
 function makeDevProfile(role) {
     return {
-        id: 'dev-00000000-0000-0000-0000-000000000000',
+        id: DEV_UUID,
         email: `dev-${role}@rra.internal`,
         full_name: `Dev ${role.charAt(0).toUpperCase() + role.slice(1)}`,
         role: role === 'coach' ? 'super_admin' : 'player',
@@ -34,7 +36,7 @@ function makeDevProfile(role) {
 }
 
 export function AuthProvider({ children }) {
-    const [session, setSession] = useState(DEV_ROLE_PARAM ? { user: { id: 'dev' } } : null);
+    const [session, setSession] = useState(DEV_ROLE_PARAM ? { user: { id: DEV_UUID } } : null);
     const [userProfile, setUserProfile] = useState(DEV_ROLE_PARAM ? makeDevProfile(DEV_ROLE_PARAM) : null);
     const [authLoading, setAuthLoading] = useState(DEV_ROLE_PARAM ? false : true);
     const [authStep, setAuthStep] = useState('login'); // 'login' | 'signing-in' | 'register' | 'registering'
