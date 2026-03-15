@@ -229,7 +229,7 @@ export default function PlayerOnboarding() {
                             <div style={{ fontSize: 11, fontWeight: 800, color: B.nvD, fontFamily: F }}>COMPETITION LEVEL {gi + 1}</div>
                             {gs.length > 1 && <button onClick={() => pu("grades", gs.filter((_, i) => i !== gi))} style={{ fontSize: 9, color: B.red, background: "none", border: "none", cursor: "pointer", fontFamily: F }}>✕ Remove</button>}
                         </div>
-                        <CompLevelSel value={g.level} onChange={v => ug(gi, "level", v)} compTiers={compTiers} gender={pd.gender} assocComps={assocComps} vmcuAssocs={vmcuAssocs} />
+                        <CompLevelSel value={g.level} onChange={v => ug(gi, "level", v)} compTiers={compTiers} gender={pd.gender} assocComps={assocComps} vmcuAssocs={vmcuAssocs} playerAssoc={pd.assoc} playerDob={pd.dob} />
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "0 8px", marginTop: 8 }}>
                             <Inp half label="Club / Team" value={g.team} onChange={v => ug(gi, "team", v)} ph="e.g. Doncaster U14" />
                             <Inp half label="Matches" value={g.matches} onChange={v => ug(gi, "matches", v)} type="number" ph="0" />

@@ -1,7 +1,8 @@
 // ═══ SHARED UI COMPONENTS ═══
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { B, F, LOGO, sGrad, sCard, isDesktop, getDSZ, getDSF } from '../data/theme';
 import { TIER_GROUPS, isCommunityGroup } from '../data/competitionData';
+import { getAge } from '../engine/ratingEngine';
 
 // ═══ HEADER ═══
 export function Hdr({ label, onLogoClick }) {
@@ -312,7 +313,7 @@ export function Ring({ value, size = 100, color = B.pk, label }) {
 }
 
 // ═══ COMPETITION LEVEL SELECTOR ═══
-export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, vmcuAssocs }) {
+export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, vmcuAssocs, playerAssoc, playerDob }) {
     const [selGroup, setSelGroup] = useState(() => {
         if (!value) return null;
         const tier = (compTiers || []).find(t => t.code === value);
@@ -328,17 +329,79 @@ export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, v
         const ac = (assocComps || []).find(c => c.competition_tier_code === value);
         return ac ? ac.association_abbrev : null;
     });
+    const [autoAssoc, setAutoAssoc] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const playerAge = useMemo(() => getAge(playerDob), [playerDob]);
+
+    // Auto-select association when Community group is picked and playerAssoc matches
+    useEffect(() => {
+        if (!selGroup || !isCommunityGroup(selGroup) || selAssoc) return;
+        if (!playerAssoc) return;
+        const uniqueAssocs = [...new Set((assocComps || []).map(c => c.association_abbrev))];
+        if (uniqueAssocs.includes(playerAssoc)) {
+            setSelAssoc(playerAssoc);
+            setAutoAssoc(true);
+            setExpanded({});
+        }
+    }, [selGroup, playerAssoc, assocComps, selAssoc]);
 
     const tiersForGroup = selGroup && !isCommunityGroup(selGroup) ? (compTiers || []).filter(t => {
         const gMatch = !gender || t.gender === gender || t.gender === 'All' || t.gender === 'Mixed' || t.gender === 'M/F';
         return selGroup.tiers.includes(t.tier) && gMatch;
     }) : [];
 
-    const compsForAssoc = (selAssoc && isCommunityGroup(selGroup)) ? (assocComps || []).filter(c => {
+    const compsForAssoc = useMemo(() => (selAssoc && isCommunityGroup(selGroup)) ? (assocComps || []).filter(c => {
         if (c.association_abbrev !== selAssoc) return false;
         if (!gender) return true;
         return c.gender === gender || c.gender === 'All' || c.gender === 'Mixed';
-    }) : [];
+    }) : [], [selAssoc, selGroup, assocComps, gender]);
+
+    // Group competitions into Senior / Junior / Girls sections
+    const sections = useMemo(() => {
+        if (!compsForAssoc.length) return [];
+        const senior = compsForAssoc.filter(c => c.age_group === 'Senior' && c.gender !== 'F');
+        const junior = compsForAssoc.filter(c => c.age_group && c.age_group.startsWith('U') && c.gender !== 'F');
+        const girls = compsForAssoc.filter(c => c.gender === 'F');
+        const groups = [];
+        if (senior.length) groups.push({ key: 'senior', label: 'Senior', icon: '🏏', comps: senior });
+        if (junior.length) groups.push({ key: 'junior', label: 'Junior', icon: '🌟', comps: junior });
+        if (girls.length) groups.push({ key: 'girls', label: "Girls / Women's", icon: '💜', comps: girls });
+        // Age-based ordering: juniors first if player is under 18
+        if (playerAge !== null && playerAge < 18 && groups.length > 1) {
+            const jIdx = groups.findIndex(g => g.key === 'junior');
+            if (jIdx > 0) { const [j] = groups.splice(jIdx, 1); groups.unshift(j); }
+        }
+        return groups;
+    }, [compsForAssoc, playerAge]);
+
+    // Expanded sections state — default: first section open
+    const [expanded, setExpanded] = useState({});
+    useEffect(() => {
+        if (sections.length > 0 && Object.keys(expanded).length === 0) {
+            setExpanded({ [sections[0].key]: true });
+        }
+    }, [sections, expanded]);
+
+    // Search filtering
+    const filteredSections = useMemo(() => {
+        if (!searchTerm.trim()) return sections;
+        const q = searchTerm.toLowerCase();
+        return sections.map(s => ({
+            ...s,
+            comps: s.comps.filter(c => c.competition_label.toLowerCase().includes(q)),
+        })).filter(s => s.comps.length > 0);
+    }, [sections, searchTerm]);
+
+    // Auto-expand matching sections when searching
+    useEffect(() => {
+        if (searchTerm.trim()) {
+            const exp = {};
+            filteredSections.forEach(s => { exp[s.key] = true; });
+            setExpanded(exp);
+        }
+    }, [filteredSections, searchTerm]);
+
+    const toggleSection = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
     const assocFull = a => {
         const obj = (vmcuAssocs || []).find(v => v.abbrev === a);
@@ -368,7 +431,7 @@ export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, v
             </div>
             <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginBottom: 4 }}>Select your association:</div>
             <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(3, 1fr)" }}>
-                {uniqueAssocs.map(a => (<button key={a} onClick={() => setSelAssoc(a)} style={{ ...btnStyle, padding: "8px 10px", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                {uniqueAssocs.map(a => (<button key={a} onClick={() => { setSelAssoc(a); setAutoAssoc(false); }} style={{ ...btnStyle, padding: "8px 10px", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
                     <span style={{ fontWeight: 700, color: B.bl, fontSize: 12 }}>{a}</span>
                     <span style={{ color: B.g600, fontSize: 9, lineHeight: 1.2 }}>{assocFull(a)}</span>
                 </button>))}
@@ -376,33 +439,102 @@ export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, v
         </div>);
     }
 
+    // ── Community association view with grouped sections ──
+    if (isCommunityGroup(selGroup)) {
+        return (<div>
+            <div style={hdrStyle}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F }}>
+                    {selGroup.icon} {selGroup.label} — {selAssoc}
+                </div>
+                <button onClick={() => {
+                    setSelAssoc(null); setAutoAssoc(false); setSearchTerm(''); setExpanded({}); onChange('');
+                }} style={{ fontSize: 9, color: B.g400, background: "none", border: "none", cursor: "pointer", fontFamily: F }}>✕ Change</button>
+            </div>
+
+            {/* Search input */}
+            {compsForAssoc.length > 6 && (
+                <div style={{ position: 'relative', marginBottom: 6 }}>
+                    <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                        placeholder="Search competitions..." style={{
+                            width: '100%', padding: '7px 30px 7px 10px', borderRadius: 6,
+                            border: `1px solid ${B.g200}`, background: B.w, color: B.g800,
+                            fontSize: 11, fontFamily: F, outline: 'none', boxSizing: 'border-box',
+                        }} />
+                    {searchTerm && (
+                        <button onClick={() => setSearchTerm('')} style={{
+                            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                            background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
+                            color: B.g400, fontFamily: F, padding: 2,
+                        }}>✕</button>
+                    )}
+                </div>
+            )}
+
+            {/* Grouped sections */}
+            {filteredSections.map(s => (
+                <div key={s.key} style={{ marginBottom: 6 }}>
+                    <button onClick={() => toggleSection(s.key)} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                        padding: '6px 8px', background: 'rgba(59,130,246,0.06)', border: `1px solid ${B.g200}`,
+                        borderRadius: 6, cursor: 'pointer', fontFamily: F, textAlign: 'left',
+                    }}>
+                        <span style={{ fontSize: 10, color: B.g400, transition: 'transform 0.15s', transform: expanded[s.key] ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                        <span style={{ fontSize: 13 }}>{s.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: B.bl }}>{s.label}</span>
+                        <span style={{ fontSize: 9, color: B.g400, marginLeft: 'auto' }}>{s.comps.length}</span>
+                    </button>
+                    {expanded[s.key] && (
+                        <div style={{ display: "grid", gap: 4, gridTemplateColumns: "repeat(3, 1fr)", marginTop: 4, paddingLeft: 4 }}>
+                            {s.comps.map(c => (
+                                <button key={c.id} onClick={() => onChange(c.competition_tier_code)} style={{
+                                    ...btnStyle, padding: "7px 8px",
+                                    background: value === c.competition_tier_code ? B.bl : B.w,
+                                    color: value === c.competition_tier_code ? B.w : B.g800,
+                                    borderColor: value === c.competition_tier_code ? B.bl : B.g200,
+                                    justifyContent: "center",
+                                }}>
+                                    <span style={{ fontWeight: 600, fontSize: 10 }}>{c.competition_label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ))}
+
+            {filteredSections.length === 0 && searchTerm && (
+                <div style={{ fontSize: 10, color: B.g400, fontFamily: F, padding: '8px 0', textAlign: 'center' }}>
+                    No competitions match "{searchTerm}"
+                </div>
+            )}
+
+            {/* Different association link */}
+            {autoAssoc && (
+                <div style={{ textAlign: 'center', marginTop: 6 }}>
+                    <button onClick={() => { setSelAssoc(null); setAutoAssoc(false); setSearchTerm(''); setExpanded({}); onChange(''); }}
+                        style={{ fontSize: 10, color: B.g400, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, textDecoration: 'underline' }}>
+                        Different association?
+                    </button>
+                </div>
+            )}
+        </div>);
+    }
+
+    // ── Non-community tier selection (unchanged) ──
     return (<div>
         <div style={hdrStyle}>
             <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F }}>
-                {selGroup.icon} {selGroup.label}{selAssoc ? ` — ${selAssoc}` : ''}
+                {selGroup.icon} {selGroup.label}
             </div>
-            <button onClick={() => {
-                if (isCommunityGroup(selGroup)) { setSelAssoc(null); onChange(''); }
-                else { setSelGroup(null); onChange(''); }
-            }} style={{ fontSize: 9, color: B.g400, background: "none", border: "none", cursor: "pointer", fontFamily: F }}>✕ Change</button>
+            <button onClick={() => { setSelGroup(null); onChange(''); }}
+                style={{ fontSize: 9, color: B.g400, background: "none", border: "none", cursor: "pointer", fontFamily: F }}>✕ Change</button>
         </div>
         <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginBottom: 4 }}>Select competition:</div>
-        {isCommunityGroup(selGroup) ? (
-            <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(3, 1fr)" }}>
-                {compsForAssoc.map(c => (
-                    <button key={c.id} onClick={() => onChange(c.competition_tier_code)} style={{ ...btnStyle, padding: "8px 10px", background: value === c.competition_tier_code ? B.bl : B.w, color: value === c.competition_tier_code ? B.w : B.g800, borderColor: value === c.competition_tier_code ? B.bl : B.g200, justifyContent: "center" }}>
-                        <span style={{ fontWeight: 600, fontSize: 11 }}>{c.competition_label}</span>
-                    </button>
-                ))}
-            </div>
-        ) : (
-            <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(3, 1fr)" }}>
-                {tiersForGroup.map(t => (
-                    <button key={t.code} onClick={() => onChange(t.code)} style={{ ...btnStyle, padding: "8px 10px", background: value === t.code ? B.bl : B.w, color: value === t.code ? B.w : B.g800, borderColor: value === t.code ? B.bl : B.g200, justifyContent: "center" }}>
-                        <span style={{ fontWeight: 600, fontSize: 11 }}>{t.competition_name}</span>
-                    </button>
-                ))}
-            </div>
-        )}
+        <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(3, 1fr)" }}>
+            {tiersForGroup.map(t => (
+                <button key={t.code} onClick={() => onChange(t.code)} style={{ ...btnStyle, padding: "8px 10px", background: value === t.code ? B.bl : B.w, color: value === t.code ? B.w : B.g800, borderColor: value === t.code ? B.bl : B.g200, justifyContent: "center" }}>
+                    <span style={{ fontWeight: 600, fontSize: 11 }}>{t.competition_name}</span>
+                </button>
+            ))}
+        </div>
     </div>);
 }
