@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "last_updated": "2026-03-13",
+  "last_updated": "2026-03-16",
   "runs": [
+    {
+      "date": "2026-03-16",
+      "session": "Post-commit deployment readiness audit (4 new commits since last run)",
+      "commit": "211bff0",
+      "tests": 160,
+      "health_score_before": 10,
+      "health_score_after": 10,
+      "findings_fixed": [],
+      "findings_noted": [
+        "[MEDIUM] Competition grade save errors still console.error only (line 128 playerDb.js) — user gets no feedback. Design choice: grade failure shouldn't void player save. Carried forward from prior audit."
+      ],
+      "new_commits_reviewed": [
+        "211bff0: dev auth UUID fix + .maybeSingle() + null guards — all correct, no regressions",
+        "80cd5d2: CompLevelSel UX improvements — useMemo prevents infinite loops, auto-assoc works",
+        "66f4f58: Password visibility toggle — aria-label present, type toggles correctly",
+        "4436c1d: Lazy PDF deps, focus trap, validation, null guards — all correct patterns"
+      ],
+      "patterns_learned": [
+        "Dev bypass IDs must be valid UUIDs to avoid FK violations (DEV_UUID pattern)",
+        "Always use .maybeSingle() when row may not exist — .single() throws PGRST116",
+        "Guard .toUpperCase() with || fallback when data might be null from Supabase",
+        "Use userProfile?.id not userProfile as useEffect dep — object reference changes trigger re-fetch",
+        "Modals need Escape close + Tab focus trap + cleanup on unmount",
+        "useRef for debounce timers — confirms incident #5 prevention pattern"
+      ],
+      "regressions_checked": "10/10 checklist items pass"
+    },
     {
       "date": "2026-03-13",
       "session": "Initial stability audit",
@@ -106,6 +133,26 @@
       "description": "All responsive checks must use isDesktop() function, not static _isDesktop constant",
       "risk": "MEDIUM",
       "check": "Zero imports of _isDesktop, dkWrap, DSZ, DSF from theme.js outside theme.js itself"
+    },
+    "dev_uuid_format": {
+      "description": "Dev bypass user IDs must be valid UUID format to avoid FK constraint violations in Supabase",
+      "risk": "HIGH",
+      "check": "DEV_UUID matches UUID v4 format: 8-4-4-4-12 hex digits"
+    },
+    "maybe_single": {
+      "description": "Use .maybeSingle() not .single() when a row may not exist. .single() throws PGRST116 on zero rows.",
+      "risk": "HIGH",
+      "check": "Search for .single() in player-facing code — should all be .maybeSingle()"
+    },
+    "null_toUpperCase": {
+      "description": "Guard .toUpperCase() calls with || fallback when data comes from Supabase (null possible)",
+      "risk": "MEDIUM",
+      "check": "grep toUpperCase in .jsx files and verify null guard present"
+    },
+    "useEffect_primitive_deps": {
+      "description": "Use primitive values (userProfile?.id) not objects (userProfile) as useEffect dependencies to prevent infinite re-fetches",
+      "risk": "MEDIUM",
+      "check": "grep useEffect deps for object references — should use .id or .key"
     }
   },
   "incident_history": [

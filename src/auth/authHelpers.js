@@ -60,7 +60,7 @@ export async function signInWithUsername(username, password) {
  * Register a new user (player or coach) via invite link.
  * Creates a Supabase Auth user, then registers them in program_members via RPC.
  */
-export async function signUpNewUser(username, password, fullName, role) {
+export async function signUpNewUser(username, password, fullName, role, code) {
     const cleanUsername = username.toLowerCase().trim();
 
     // Validate username format
@@ -76,6 +76,22 @@ export async function signUpNewUser(username, password, fullName, role) {
     // Validate password length
     if (password.length < 6) {
         throw new Error('Password must be at least 6 characters.');
+    }
+
+    // Validate registration code
+    if (!code || !code.trim()) {
+        throw new Error('Please enter your registration code.');
+    }
+
+    // Pre-flight: check code is valid before creating the auth user
+    const { data: codeCheck, error: codeErr } = await supabase
+        .rpc('validate_registration_code', { p_code: code.trim(), p_role: role });
+
+    if (codeErr) {
+        throw new Error('Unable to verify registration code. Please try again.');
+    }
+    if (codeCheck && !codeCheck.valid) {
+        throw new Error(codeCheck.error || 'Invalid registration code.');
     }
 
     // 1. Create Supabase Auth user
@@ -99,7 +115,7 @@ export async function signUpNewUser(username, password, fullName, role) {
 
     // 2. Register in program_members via security-definer RPC
     const { data: rpcResult, error: rpcError } = await supabase
-        .rpc('register_new_user', { p_username: cleanUsername, p_role: role });
+        .rpc('register_new_user', { p_username: cleanUsername, p_role: role, p_code: code.trim() });
 
     if (rpcError) {
         throw new Error('Registration failed. Please try again.');

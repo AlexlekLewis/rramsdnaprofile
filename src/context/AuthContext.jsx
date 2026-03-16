@@ -119,10 +119,10 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const signUp = async (username, password, fullName, role) => {
+    const signUp = async (username, password, fullName, role, code) => {
         setAuthStep('registering');
         try {
-            const result = await signUpNewUser(username, password, fullName, role);
+            const result = await signUpNewUser(username, password, fullName, role, code);
             // Clear ?join= param from URL without page reload
             if (typeof window !== 'undefined') {
                 const url = new URL(window.location);

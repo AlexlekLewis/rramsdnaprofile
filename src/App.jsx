@@ -32,6 +32,7 @@ function MainApp() {
   const [regConfirm, setRegConfirm] = useState('');
   const [showRegPw, setShowRegPw] = useState(false);
   const [showRegConfirmPw, setShowRegConfirmPw] = useState(false);
+  const [regCode, setRegCode] = useState('');
 
   const handleLogin = async () => {
     if (!loginUsername || !loginPassword) {
@@ -47,6 +48,10 @@ function MainApp() {
   };
 
   const handleRegister = async () => {
+    if (!regCode.trim()) {
+      setAuthError('Please enter your registration code.');
+      return;
+    }
     if (!regName.trim() || !regUsername.trim() || !regPassword) {
       setAuthError('Please fill in all fields.');
       return;
@@ -61,7 +66,7 @@ function MainApp() {
     }
     setAuthError('');
     try {
-      await signUp(regUsername, regPassword, regName, joinRole || 'player');
+      await signUp(regUsername, regPassword, regName, joinRole || 'player', regCode.trim());
     } catch (e) {
       setAuthError(e.message || 'Registration failed. Please try again.');
     }
@@ -121,8 +126,14 @@ function MainApp() {
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontFamily: F, marginBottom: 16, lineHeight: 1.4, textAlign: 'center' }}>
             Create your {joinRole || 'player'} account
           </div>
+          <input type="text" value={regCode} onChange={e => { setRegCode(e.target.value.toUpperCase().replace(/[^A-Z0-9\-]/g, '')); setAuthError(''); }}
+            placeholder="Registration Code" autoFocus autoCapitalize="characters" autoCorrect="off"
+            style={{ ...inputStyle(authError), textAlign: 'center', letterSpacing: 2, fontWeight: 800, fontSize: 14 }} />
+          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: F, marginTop: -4, marginBottom: 10, textAlign: 'center' }}>
+            Enter the code provided by your programme coordinator
+          </div>
           <input type="text" value={regName} onChange={e => { setRegName(e.target.value); setAuthError(''); }}
-            placeholder="Full Name" autoFocus autoCapitalize="words" style={inputStyle(authError)} />
+            placeholder="Full Name" autoCapitalize="words" style={inputStyle(authError)} />
           <input type="text" value={regUsername} onChange={e => { setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '')); setAuthError(''); }}
             placeholder="Username" autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
           <div style={{ position: 'relative', width: '100%' }}>
