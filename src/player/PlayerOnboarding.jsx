@@ -20,7 +20,7 @@ import {
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
-import { savePlayerToDB } from "../db/playerDb";
+import { savePlayerToDB, saveDraftToDB, loadDraftFromDB } from "../db/playerDb";
 import { supabase } from "../supabaseClient";
 import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
@@ -114,19 +114,70 @@ export default function PlayerOnboarding() {
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [stepError, setStepError] = useState('');
+    const [draftId, setDraftId] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
+    const [draftLoading, setDraftLoading] = useState(!!session?.user?.id);
 
     const stepStartRef = useRef(Date.now());
+    const pdRef = useRef(pd);
+    const lastSavedRef = useRef(null);
+    useEffect(() => { pdRef.current = pd; }, [pd]);
 
-    // ── Abandon tracking: fire SURVEY_ABANDON if player leaves mid-onboarding ──
+    // ── Load saved draft from database on mount ──
     useEffect(() => {
-        const handleUnload = () => {
-            if (portal === 'player' && pStep > 0 && pStep < 7) {
+        if (!session?.user?.id) { setDraftLoading(false); return; }
+        let cancelled = false;
+        loadDraftFromDB(session.user.id).then(draft => {
+            if (cancelled) return;
+            if (draft) {
+                setPd(draft.pd);
+                setPStep(draft.step);
+                setDraftId(draft.draftId);
+                lastSavedRef.current = JSON.stringify(draft.pd);
+            }
+            setDraftLoading(false);
+        }).catch(err => {
+            console.error('Load draft error:', err);
+            if (!cancelled) setDraftLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    // ── Save draft to database ──
+    const saveDraft = async (pdOverride, stepOverride) => {
+        if (!session?.user?.id || saving) return;
+        setSaving(true);
+        setSaveStatus('saving');
+        try {
+            const toSave = pdOverride || pdRef.current;
+            const step = stepOverride != null ? stepOverride : pStep;
+            const saved = await saveDraftToDB(toSave, step, session.user.id);
+            setDraftId(saved.id);
+            lastSavedRef.current = JSON.stringify(toSave);
+            setSaveStatus('saved');
+            setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 2000);
+        } catch (e) {
+            console.error('Save draft error:', e);
+            setSaveStatus('error');
+            setTimeout(() => setSaveStatus(s => s === 'error' ? 'idle' : s), 3000);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── Warn player if they try to close with unsaved changes ──
+    useEffect(() => {
+        const handleUnload = (e) => {
+            if (pStep > 0 && pStep < 7) {
                 trackEvent(EVT.SURVEY_ABANDON, { step: pStep, elapsed: Date.now() - stepStartRef.current });
+                const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
+                if (hasChanges) { e.preventDefault(); e.returnValue = ''; }
             }
         };
         window.addEventListener('beforeunload', handleUnload);
         return () => window.removeEventListener('beforeunload', handleUnload);
-    }, [portal, pStep]);
+    }, [pStep]);
 
     const stpN = ["Profile", "Competition History", "T20 Identity", "Self-Assessment", "Player Voice", "Medical & Goals", "Review"];
     const age = getAge(pd.dob);
@@ -169,7 +220,7 @@ export default function PlayerOnboarding() {
         return null;
     };
 
-    // ── Onboarding step timer ──
+    // ── Onboarding step timer (auto-saves to database) ──
     const advanceStep = (next) => {
         const err = validateStep(pStep);
         if (err) { setStepError(err); return; }
@@ -180,11 +231,14 @@ export default function PlayerOnboarding() {
         progress.totalTimeMs = (progress.totalTimeMs || 0) + elapsed;
         progress.lastStepReached = Math.max(progress.lastStepReached || 0, next);
         progress.percentComplete = Math.round((next / (stpN.length - 1)) * 100);
+        const updatedPd = { ...pd, onboardingProgress: progress };
         pu('onboardingProgress', progress);
         trackEvent(EVT.SURVEY_STEP || 'survey_step', { step: pStep, stepName: stpN[pStep], durationMs: elapsed });
         stepStartRef.current = Date.now();
         setPStep(next);
         goTop();
+        // Auto-save draft to database
+        saveDraft(updatedPd, next);
     };
 
     const renderP = () => {
@@ -626,14 +680,15 @@ export default function PlayerOnboarding() {
                     setSubmitting(true);
                     setSubmitError('');
                     try {
-                        const saved = await savePlayerToDB(pd, session?.user?.id);
+                        const saved = await savePlayerToDB(pd, session?.user?.id, draftId);
                         if (!saved) throw new Error('Save returned no data');
                         // Mark user_profiles.submitted so portal routing works on refresh
                         if (session?.user?.id) {
                             const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', session.user.id);
                             if (upErr) console.warn('user_profiles.submitted update failed:', upErr.message);
                         }
-                        try { sessionStorage.removeItem('rra_pd'); sessionStorage.removeItem('rra_pStep'); } catch {}
+                        try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
+                        lastSavedRef.current = JSON.stringify(pd);
                         setPStep(7);
                     } catch (e) {
                         console.error('Submit error:', e);
@@ -653,13 +708,28 @@ export default function PlayerOnboarding() {
         return null;
     };
 
+    // ── Confirm before sign-out if unsaved changes ──
+    const handleSignOut = () => {
+        const hasChanges = lastSavedRef.current !== JSON.stringify(pd);
+        if (pStep > 0 && pStep < 7 && hasChanges) {
+            if (!window.confirm('You have unsaved progress. Are you sure you want to sign out?')) return;
+        }
+        signOut();
+    };
+
+    if (draftLoading) return (<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: B.g50 }}>
+        <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: B.g600, fontFamily: F }}>Loading your progress...</div>
+        </div>
+    </div>);
+
     return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
 
-        <Hdr label="PLAYER ONBOARDING" onLogoClick={signOut} />
+        <Hdr label="PLAYER ONBOARDING" onLogoClick={handleSignOut} />
         {/* Sign-out bar */}
         <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{session?.user?.email}</div>
-            <button onClick={signOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+            <button onClick={handleSignOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
         </div>
 
         {/* ═══ PROFILE UPDATE BANNER (v1 → v2) ═══ */}
@@ -704,8 +774,11 @@ export default function PlayerOnboarding() {
             {renderP()}
         </div>
 
-        {pStep < 7 && <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", zIndex: 100 }}>
-            <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else signOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>
+        {pStep < 7 && <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 100 }}>
+            <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else handleSignOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>
+            <button disabled={saving} onClick={() => saveDraft()} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g300}`, background: saveStatus === 'saved' ? `${B.grn}10` : saveStatus === 'error' ? '#FEE2E2' : 'transparent', fontSize: 11, fontWeight: 600, color: saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g600, cursor: saving ? 'default' : 'pointer', fontFamily: F, transition: 'all 0.2s' }}>
+                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Save Failed' : 'Save Progress'}
+            </button>
             <button onClick={() => advanceStep(Math.min(pStep + 1, 6))} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: `linear-gradient(135deg,${B.bl},${B.pk})`, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>Next →</button>
         </div>}
     </div>);

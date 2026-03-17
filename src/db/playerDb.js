@@ -69,7 +69,8 @@ export async function loadPlayersFromDB() {
     });
 }
 
-export async function savePlayerToDB(pd, authUserId) {
+// ── Shared helper: build the column data from the form object ──
+function buildPlayerRow(pd) {
     const rid = ROLES.find(r => r.label === pd.role)?.id || 'batter';
     const selfRatings = {};
     Object.keys(pd).filter(k => k.startsWith('sr_')).forEach(k => { selfRatings[k.replace('sr_', '')] = pd[k]; });
@@ -81,14 +82,14 @@ export async function savePlayerToDB(pd, authUserId) {
         wkts: +b.wkts || 0, runs: +b.runs || 0, overs: +b.overs || 0, maidens: +b.maidens || 0,
         comp: b.comp || '', vs: b.vs || '', format: b.format || ''
     }));
-    const insertData = {
-        name: pd.name, dob: pd.dob, phone: pd.phone, email: pd.email, club: pd.club,
-        association: pd.assoc, role: rid, batting_hand: pd.bat, bowling_type: pd.bowl,
-        parent_name: pd.parentName, parent_email: pd.parentEmail,
-        injury: pd.injury, goals: pd.goals, gender: pd.gender || null,
+    return {
+        name: pd.name || null, dob: pd.dob || null, phone: pd.phone || null, email: pd.email || null,
+        club: pd.club || null, association: pd.assoc || null, role: rid,
+        batting_hand: pd.bat || null, bowling_type: pd.bowl || null,
+        parent_name: pd.parentName || null, parent_email: pd.parentEmail || null,
+        injury: pd.injury || null, goals: pd.goals || null, gender: pd.gender || null,
         voice_answers: VOICE_QS.map((_, i) => pd[`v_${i}`] || ''),
-        self_ratings: selfRatings, top_batting_scores: topBatScores, top_bowling_figures: topBowlFigs, submitted: true,
-        // ── v2 profile enrichment ──
+        self_ratings: selfRatings, top_batting_scores: topBatScores, top_bowling_figures: topBowlFigs,
         height_cm: pd.heightCm ? +pd.heightCm : null,
         batting_position: pd.batPosition || null,
         batting_phases: pd.batPhases || null,
@@ -106,14 +107,13 @@ export async function savePlayerToDB(pd, authUserId) {
         bwl_arch_answers: pd.bwlArchAnswers || null,
         bat_arch_secondary: pd.playerBatArchSecondary || null,
         bwl_arch_secondary: pd.playerBwlArchSecondary || null,
-        onboarding_progress: pd.onboardingProgress || null,
         profile_version: 2,
     };
-    if (authUserId) insertData.auth_user_id = authUserId;
-    const { data: player, error: pErr } = await supabase.from('players').insert(insertData).select().single();
-    if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
-    const grades = (pd.grades || []).filter(g => g.level).map((g, i) => ({
-        player_id: player.id, level: g.level, age_group: g.ageGroup, shield: g.shield || '', team: g.team || '',
+}
+
+function buildGradeRows(pd, playerId) {
+    return (pd.grades || []).filter(g => g.level).map((g, i) => ({
+        player_id: playerId, level: g.level, age_group: g.ageGroup, shield: g.shield || '', team: g.team || '',
         association: g.association || '', matches: +g.matches || 0, batting_innings: +g.batInn || 0, runs: +g.runs || 0, high_score: +g.hs || 0,
         batting_avg: +g.avg || 0, not_outs: +g.notOuts || 0, balls_faced: +g.ballsFaced || 0,
         bowling_innings: +g.bowlInn || 0, overs: +g.overs || 0, wickets: +g.wkts || 0,
@@ -123,11 +123,138 @@ export async function savePlayerToDB(pd, authUserId) {
         hs_balls_faced: +g.hsBallsFaced || 0, hs_boundaries: +g.hsBoundaries || 0,
         format: g.format || '', sort_order: i
     }));
+}
+
+export async function savePlayerToDB(pd, authUserId, draftId) {
+    const row = { ...buildPlayerRow(pd), submitted: true, onboarding_progress: pd.onboardingProgress || null };
+    if (authUserId) row.auth_user_id = authUserId;
+
+    let player;
+    if (draftId) {
+        // Update existing draft → submitted
+        const { data, error: pErr } = await supabase.from('players').update(row).eq('id', draftId).select().single();
+        if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
+        player = data;
+        await supabase.from('competition_grades').delete().eq('player_id', draftId);
+    } else {
+        const { data, error: pErr } = await supabase.from('players').insert(row).select().single();
+        if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
+        player = data;
+    }
+
+    const grades = buildGradeRows(pd, player.id);
     if (grades.length) {
         const { error: gErr } = await supabase.from('competition_grades').insert(grades);
         if (gErr) console.error('Save grades error (player saved OK):', gErr);
     }
     return player;
+}
+
+// ═══ DRAFT SAVE / LOAD ═══
+
+export async function saveDraftToDB(pd, step, authUserId) {
+    if (!authUserId) throw new Error('Auth required for draft save');
+
+    const progress = pd.onboardingProgress || {};
+    const row = {
+        ...buildPlayerRow(pd),
+        submitted: false,
+        auth_user_id: authUserId,
+        onboarding_progress: {
+            ...progress,
+            draftStep: step,
+            draftExtra: { primarySkill: pd.primarySkill, secondarySkill: pd.secondarySkill },
+        },
+    };
+
+    // Check for existing draft
+    const { data: existing } = await supabase.from('players')
+        .select('id').eq('auth_user_id', authUserId).eq('submitted', false).maybeSingle();
+
+    let player;
+    if (existing) {
+        const { data, error } = await supabase.from('players').update(row).eq('id', existing.id).select().single();
+        if (error) throw new Error(`Draft update failed: ${error.message}`);
+        player = data;
+        await supabase.from('competition_grades').delete().eq('player_id', player.id);
+    } else {
+        const { data, error } = await supabase.from('players').insert(row).select().single();
+        if (error) throw new Error(`Draft save failed: ${error.message}`);
+        player = data;
+    }
+
+    const grades = buildGradeRows(pd, player.id);
+    if (grades.length) {
+        const { error: gErr } = await supabase.from('competition_grades').insert(grades);
+        if (gErr) console.error('Draft grade save error:', gErr);
+    }
+    return player;
+}
+
+export async function loadDraftFromDB(authUserId) {
+    if (!authUserId) return null;
+
+    const { data: p, error } = await supabase.from('players')
+        .select('*').eq('auth_user_id', authUserId).eq('submitted', false).maybeSingle();
+    if (error || !p) return null;
+
+    const { data: gRows } = await supabase.from('competition_grades')
+        .select('*').eq('player_id', p.id).order('sort_order');
+
+    const grades = (gRows || []).map(g => ({
+        level: g.level, ageGroup: g.age_group, shield: g.shield, team: g.team, association: g.association,
+        matches: String(g.matches || ''), batInn: String(g.batting_innings || ''), runs: String(g.runs || ''),
+        hs: String(g.high_score || ''), avg: String(g.batting_avg || ''),
+        notOuts: String(g.not_outs || ''), ballsFaced: String(g.balls_faced || ''),
+        bowlInn: String(g.bowling_innings || ''), overs: String(g.overs || ''), wkts: String(g.wickets || ''),
+        sr: g.strike_rate != null ? String(g.strike_rate) : '', bAvg: g.bowling_avg != null ? String(g.bowling_avg) : '',
+        econ: g.economy != null ? String(g.economy) : '',
+        bestBowlWkts: String(g.best_bowl_wkts || ''), bestBowlRuns: String(g.best_bowl_runs || ''),
+        ct: String(g.catches || ''), ro: String(g.run_outs || ''), st: String(g.stumpings || ''),
+        keeperCatches: String(g.keeper_catches || ''), hsBallsFaced: String(g.hs_balls_faced || ''),
+        hsBoundaries: String(g.hs_boundaries || ''), format: g.format || ''
+    }));
+    const topBat = (p.top_batting_scores || []).map(b => ({
+        runs: String(b.runs || ''), balls: String(b.balls || ''), fours: String(b.fours || ''), sixes: String(b.sixes || ''),
+        notOut: !!b.notOut, comp: b.comp || '', vs: b.vs || '', format: b.format || ''
+    }));
+    const topBowl = (p.top_bowling_figures || []).map(b => ({
+        wkts: String(b.wkts || ''), runs: String(b.runs || ''), overs: String(b.overs || ''), maidens: String(b.maidens || ''),
+        comp: b.comp || '', vs: b.vs || '', format: b.format || ''
+    }));
+
+    const progress = p.onboarding_progress || {};
+    const extra = progress.draftExtra || {};
+
+    const pd = {
+        name: p.name || '', dob: p.dob || '', phone: p.phone || '', email: p.email || '',
+        club: p.club || '', assoc: p.association || '', gender: p.gender || '',
+        parentName: p.parent_name || '', parentEmail: p.parent_email || '',
+        role: ROLES.find(r => r.id === p.role)?.label || '',
+        bat: p.batting_hand || '', bowl: p.bowling_type || '',
+        injury: p.injury || '', goals: p.goals || '',
+        grades: grades.length ? grades : [{}],
+        topBat: topBat.length ? topBat : [{}],
+        topBowl: topBowl.length ? topBowl : [{}],
+        heightCm: p.height_cm ? String(p.height_cm) : '',
+        batPosition: p.batting_position || '',
+        batPhases: p.batting_phases || null, bwlPhases: p.bowling_phases || null,
+        bwlSpeed: p.bowling_speed || '', gotoShots: p.goto_shots || null,
+        pressureShot: p.pressure_shot || '', shutdownDelivery: p.shutdown_delivery || '',
+        bwlVariations: p.bowling_variations || null,
+        spinComfort: p.spin_comfort, shortBallComfort: p.short_ball_comfort,
+        playerBatArch: p.player_bat_archetype || null, playerBwlArch: p.player_bwl_archetype || null,
+        batArchAnswers: p.bat_arch_answers || null, bwlArchAnswers: p.bwl_arch_answers || null,
+        playerBatArchSecondary: p.bat_arch_secondary || null, playerBwlArchSecondary: p.bwl_arch_secondary || null,
+        onboardingProgress: progress,
+        primarySkill: extra.primarySkill || '', secondarySkill: extra.secondarySkill || '',
+    };
+
+    // Restore voice answers & self-ratings
+    (p.voice_answers || []).forEach((v, i) => { if (v) pd[`v_${i}`] = v; });
+    Object.entries(p.self_ratings || {}).forEach(([k, v]) => { pd[`sr_${k}`] = v; });
+
+    return { pd, step: progress.draftStep || 0, draftId: p.id };
 }
 
 export async function saveAssessmentToDB(playerId, cd) {

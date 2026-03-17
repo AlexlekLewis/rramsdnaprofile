@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 
 /**
- * Hook that persists state in sessionStorage.
- * Survives page reloads within the same tab but not across tabs.
+ * Hook that persists state in localStorage.
+ * Survives page reloads, tab close, and browser restart.
  */
 export function useSessionState(key, defaultValue) {
     const [value, setValue] = useState(() => {
         try {
-            const stored = sessionStorage.getItem(key);
+            const stored = localStorage.getItem(key);
             return stored !== null ? JSON.parse(stored) : defaultValue;
         } catch { return defaultValue; }
     });
     useEffect(() => {
-        try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { }
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch { }
     }, [key, value]);
     return [value, setValue];
 }
