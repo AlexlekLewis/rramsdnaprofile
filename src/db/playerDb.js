@@ -74,13 +74,14 @@ function buildPlayerRow(pd) {
     const rid = ROLES.find(r => r.label === pd.role)?.id || 'batter';
     const selfRatings = {};
     Object.keys(pd).filter(k => k.startsWith('sr_')).forEach(k => { selfRatings[k.replace('sr_', '')] = pd[k]; });
-    const topBatScores = (pd.topBat || []).filter(b => +b.runs > 0).map(b => ({
-        runs: +b.runs || 0, balls: +b.balls || 0, fours: +b.fours || 0, sixes: +b.sixes || 0,
-        notOut: !!b.notOut, comp: b.comp || '', vs: b.vs || '', format: b.format || ''
+    // Flatten best performances from inside each grade card
+    const topBatScores = (pd.grades || []).filter(g => g.topBat && +g.topBat.runs > 0).map(g => ({
+        runs: +g.topBat.runs || 0, balls: +g.topBat.balls || 0, fours: +g.topBat.fours || 0, sixes: +g.topBat.sixes || 0,
+        notOut: !!g.topBat.notOut, comp: g.level || '', vs: g.topBat.vs || '', format: g.topBat.format || ''
     }));
-    const topBowlFigs = (pd.topBowl || []).filter(b => +b.wkts > 0 || +b.runs > 0).map(b => ({
-        wkts: +b.wkts || 0, runs: +b.runs || 0, overs: +b.overs || 0, maidens: +b.maidens || 0,
-        comp: b.comp || '', vs: b.vs || '', format: b.format || ''
+    const topBowlFigs = (pd.grades || []).filter(g => g.topBowl && (+g.topBowl.wkts > 0 || +g.topBowl.runs > 0)).map(g => ({
+        wkts: +g.topBowl.wkts || 0, runs: +g.topBowl.runs || 0, overs: +g.topBowl.overs || 0, maidens: +g.topBowl.maidens || 0,
+        comp: g.level || '', vs: g.topBowl.vs || '', format: g.topBowl.format || ''
     }));
     return {
         name: pd.name || null, dob: pd.dob || null, phone: pd.phone || null, email: pd.email || null,
@@ -214,14 +215,18 @@ export async function loadDraftFromDB(authUserId) {
         keeperCatches: String(g.keeper_catches || ''), hsBallsFaced: String(g.hs_balls_faced || ''),
         hsBoundaries: String(g.hs_boundaries || ''), format: g.format || ''
     }));
-    const topBat = (p.top_batting_scores || []).map(b => ({
-        runs: String(b.runs || ''), balls: String(b.balls || ''), fours: String(b.fours || ''), sixes: String(b.sixes || ''),
-        notOut: !!b.notOut, comp: b.comp || '', vs: b.vs || '', format: b.format || ''
-    }));
-    const topBowl = (p.top_bowling_figures || []).map(b => ({
-        wkts: String(b.wkts || ''), runs: String(b.runs || ''), overs: String(b.overs || ''), maidens: String(b.maidens || ''),
-        comp: b.comp || '', vs: b.vs || '', format: b.format || ''
-    }));
+    // Map top performances back into grades by matching comp (level code)
+    const topBatArr = (p.top_batting_scores || []);
+    const topBowlArr = (p.top_bowling_figures || []);
+    const gradesWithPerf = (grades.length ? grades : [{}]).map(g => {
+        const tb = topBatArr.find(b => b.comp === g.level);
+        const tw = topBowlArr.find(b => b.comp === g.level);
+        return {
+            ...g,
+            topBat: tb ? { runs: String(tb.runs || ''), balls: String(tb.balls || ''), fours: String(tb.fours || ''), sixes: String(tb.sixes || ''), notOut: !!tb.notOut, vs: tb.vs || '', format: tb.format || '' } : undefined,
+            topBowl: tw ? { wkts: String(tw.wkts || ''), runs: String(tw.runs || ''), overs: String(tw.overs || ''), maidens: String(tw.maidens || ''), vs: tw.vs || '', format: tw.format || '' } : undefined,
+        };
+    });
 
     const progress = p.onboarding_progress || {};
     const extra = progress.draftExtra || {};
@@ -233,9 +238,7 @@ export async function loadDraftFromDB(authUserId) {
         role: ROLES.find(r => r.id === p.role)?.label || '',
         bat: p.batting_hand || '', bowl: p.bowling_type || '',
         injury: p.injury || '', goals: p.goals || '',
-        grades: grades.length ? grades : [{}],
-        topBat: topBat.length ? topBat : [{}],
-        topBowl: topBowl.length ? topBowl : [{}],
+        grades: gradesWithPerf,
         heightCm: p.height_cm ? String(p.height_cm) : '',
         batPosition: p.batting_position || '',
         batPhases: p.batting_phases || null, bwlPhases: p.bowling_phases || null,
@@ -258,9 +261,17 @@ export async function loadDraftFromDB(authUserId) {
 }
 
 export async function saveAssessmentToDB(playerId, cd) {
+    // Fetch session at function scope so it's accessible for both history and upsert
+    let session = null;
+    try {
+        const { data } = await supabase.auth.getSession();
+        session = data?.session || null;
+    } catch (e) {
+        console.warn('Failed to get session for coach_id:', e.message);
+    }
+
     // ── Snapshot existing assessment into history before overwriting ──
     try {
-        const { data: { session } } = await supabase.auth.getSession();
         const { data: existing } = await supabase
             .from('coach_assessments')
             .select('*')
@@ -294,14 +305,18 @@ export async function saveAssessmentToDB(playerId, cd) {
     const strengths = [cd.str1, cd.str2, cd.str3].filter(Boolean);
     const priorities = [cd.pri1, cd.pri2, cd.pri3].filter(Boolean);
     const row = {
-        player_id: playerId, batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
+        player_id: playerId, coach_id: session?.user?.id || null,
+        batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
         phase_ratings, tech_primary, tech_secondary, game_iq, mental, physical,
         narrative: cd.narrative || null, strengths, priorities,
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
         squad_rec: cd.sqRec || null, updated_at: new Date().toISOString()
     };
     const { error: upsertErr } = await supabase.from('coach_assessments').upsert(row, { onConflict: 'player_id' });
-    if (upsertErr) throw upsertErr;
+    if (upsertErr) {
+        console.error('Assessment upsert failed:', upsertErr.message, upsertErr.details);
+        throw upsertErr;
+    }
 }
 
 // ═══ CALIBRATION DATA LOADERS ═══

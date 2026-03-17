@@ -12,6 +12,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ── AI report generation ──
+export async function generateDNAReport(payload) {
+    const res = await fetch(`${supabaseUrl}/functions/v1/generate-dna-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`AI generation failed: ${res.statusText}`);
+    return res.json();
+}
+
 // ── Slack notification helper (fire-and-forget) ──
 export function notifySlack(type, details) {
     fetch(`${supabaseUrl}/functions/v1/slack-notify`, {

@@ -82,7 +82,7 @@ const RadarChart = ({ domains, size = 240 }) => {
 };
 
 // ═══ REPORT CARD COMPONENT ═══
-export default function ReportCard({ player, assessment, engine }) {
+export default function ReportCard({ player, assessment, engine, isAdmin }) {
     const { name, dob, club, role, playerBatArch, playerBwlArch, gotoShots, pressureShot, bwlVariations, spinComfort, shortBallComfort, heightCm } = player || {};
     const { overall, pathway, cohort, agePct, grade, pdi, domains, strengths, growthAreas, sagi, phaseScores, narrative, plan, squad } = engine || {};
     const batArch = BAT_ARCH.find(a => a.id === playerBatArch);
@@ -269,7 +269,7 @@ export default function ReportCard({ player, assessment, engine }) {
                 </div>
 
                 {/* Squad recommendation */}
-                {squad && <div style={{ marginTop: 10, background: `${B.prp}08`, border: `1px solid ${B.prp}30`, borderRadius: 8, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {squad && isAdmin && <div style={{ marginTop: 10, background: `${B.prp}08`, border: `1px solid ${B.prp}30`, borderRadius: 8, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.prp }}>SQUAD RECOMMENDATION:</div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: B.g600 }}>{squad}</div>
                 </div>}

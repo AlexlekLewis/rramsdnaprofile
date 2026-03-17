@@ -11,6 +11,7 @@ import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB } from "../db/playerDb";
+import { generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
 
@@ -483,6 +484,41 @@ export default function CoachAssessment() {
                         </div>
                     </div>))}
 
+                    {/* AI Generation Button */}
+                    <button disabled={sp._aiGenerating} onClick={async () => {
+                        setPlayers(ps => ps.map(p => p.id === sp.id ? { ...p, _aiGenerating: true } : p));
+                        try {
+                            const payload = {
+                                player: { name: sp.name, dob: sp.dob, club: sp.club, association: sp.assoc, role: sp.role, gender: sp.gender, batting_hand: sp.bat, bowling_type: sp.bowl, height_cm: sp.heightCm, batting_position: sp.batPosition },
+                                grades: (sp.grades || []).map(g => ({ level: g.level, matches: g.matches, runs: g.runs, batting_avg: g.avg, wickets: g.wkts, bowling_avg: g.bAvg })),
+                                selfRatings: sp.self_ratings || {},
+                                coachRatings: cd,
+                                archetype: { batting: cd.batA || sp.playerBatArch, bowling: cd.bwlA || sp.playerBwlArch },
+                                engine: { pdi: dn.pdi, grade: dn.g, domains: dn.domains.map(d => ({ label: d.l, score: Math.round(d.s100) })) },
+                                phaseScores: { pb_pp: cd.pb_pp, pb_mid: cd.pb_mid, pb_death: cd.pb_death, pw_pp: cd.pw_pp, pw_mid: cd.pw_mid, pw_death: cd.pw_death },
+                            };
+                            const ai = await generateDNAReport(payload);
+                            if (ai.narrative) cU("narrative", ai.narrative);
+                            if (ai.str1) cU("str1", ai.str1);
+                            if (ai.str2) cU("str2", ai.str2);
+                            if (ai.str3) cU("str3", ai.str3);
+                            if (ai.pri1) cU("pri1", ai.pri1);
+                            if (ai.pri2) cU("pri2", ai.pri2);
+                            if (ai.pri3) cU("pri3", ai.pri3);
+                            if (ai.pl_explore) cU("pl_explore", ai.pl_explore);
+                            if (ai.pl_challenge) cU("pl_challenge", ai.pl_challenge);
+                            if (ai.pl_execute) cU("pl_execute", ai.pl_execute);
+                            if (ai.sqRec) cU("sqRec", ai.sqRec);
+                        } catch (e) {
+                            console.error('AI generation error:', e);
+                            saveStatusHook.setError('AI generation failed — try again');
+                        } finally {
+                            setPlayers(ps => ps.map(p => p.id === sp.id ? { ...p, _aiGenerating: false } : p));
+                        }
+                    }} style={{ width: '100%', padding: '10px 16px', borderRadius: 8, border: `1.5px solid ${B.bl}`, background: sp._aiGenerating ? B.g100 : `${B.bl}08`, color: B.bl, fontSize: 12, fontWeight: 700, fontFamily: F, cursor: sp._aiGenerating ? 'default' : 'pointer', marginBottom: 12, transition: 'all 0.2s' }}>
+                        {sp._aiGenerating ? '🔄 Generating with AI...' : '✨ Generate All with AI'}
+                    </button>
+
                     <SecH title="DNA Narrative" sub="Archetype, phase fit, character, ceiling" />
                     <TArea value={cd.narrative} onChange={v => cU("narrative", v)} ph="Who is this player right now?" rows={3} />
                     <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
@@ -580,7 +616,7 @@ export default function CoachAssessment() {
                     challenge: (rCd.pl_challenge || '').split('\n').filter(Boolean),
                     execute: (rCd.pl_execute || '').split('\n').filter(Boolean),
                 };
-                return <Suspense fallback={null}><ReportCard player={reportPlayer} assessment={rCd} engine={{
+                return <Suspense fallback={null}><ReportCard player={reportPlayer} assessment={rCd} isAdmin={isAdmin} engine={{
                     overall: rOverall, pathway: rPathway, cohort: rCohort, agePct: rAge,
                     pdi: rDn.pdi, grade: rGrade, domains: rDomains,
                     strengths: rStrengths, growthAreas: rGrowth,
