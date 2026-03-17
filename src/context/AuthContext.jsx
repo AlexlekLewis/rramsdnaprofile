@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase, notifySlack } from "../supabaseClient";
 import {
     signInWithUsername,
     signUpNewUser,
@@ -123,6 +123,7 @@ export function AuthProvider({ children }) {
         setAuthStep('registering');
         try {
             const result = await signUpNewUser(username, password, fullName, role, code);
+            notifySlack('signup', { name: fullName, username, role });
             // Clear ?join= param from URL without page reload
             if (typeof window !== 'undefined') {
                 const url = new URL(window.location);

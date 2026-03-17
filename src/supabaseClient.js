@@ -12,3 +12,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ── Slack notification helper (fire-and-forget) ──
+export function notifySlack(type, details) {
+    fetch(`${supabaseUrl}/functions/v1/slack-notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, details }),
+    }).catch(err => console.warn('Slack notify failed:', err));
+}

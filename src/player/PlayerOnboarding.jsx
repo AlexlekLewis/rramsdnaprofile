@@ -21,7 +21,7 @@ import {
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
 import { savePlayerToDB, saveDraftToDB, loadDraftFromDB } from "../db/playerDb";
-import { supabase } from "../supabaseClient";
+import { supabase, notifySlack } from "../supabaseClient";
 import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
     Hdr, SecH, Inp, Sel, TArea, NumInp, Dots, AssGrid, CompLevelSel
@@ -688,6 +688,7 @@ export default function PlayerOnboarding() {
                             if (upErr) console.warn('user_profiles.submitted update failed:', upErr.message);
                         }
                         try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
+                        notifySlack('submission', { name: pd.name, club: pd.club, role: pd.role, dob: pd.dob, association: pd.assoc });
                         lastSavedRef.current = JSON.stringify(pd);
                         setPStep(7);
                     } catch (e) {
