@@ -73,9 +73,9 @@ export async function signUpNewUser(username, password, fullName, role, code) {
         throw new Error('Invalid role.');
     }
 
-    // Validate password length
-    if (password.length < 6) {
-        throw new Error('Password must be at least 6 characters.');
+    // Validate password strength (must match frontend rules)
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+        throw new Error('Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.');
     }
 
     // Validate registration code

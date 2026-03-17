@@ -34,6 +34,16 @@ function MainApp() {
   const [showRegConfirmPw, setShowRegConfirmPw] = useState(false);
   const [regCode, setRegCode] = useState('');
 
+  // ═══ PASSWORD STRENGTH RULES ═══
+  const pwRules = [
+    { label: 'At least 8 characters',         test: pw => pw.length >= 8 },
+    { label: 'One uppercase letter (A–Z)',     test: pw => /[A-Z]/.test(pw) },
+    { label: 'One lowercase letter (a–z)',     test: pw => /[a-z]/.test(pw) },
+    { label: 'One number (0–9)',               test: pw => /[0-9]/.test(pw) },
+    { label: 'One special character (!@#$…)',  test: pw => /[^A-Za-z0-9]/.test(pw) },
+  ];
+  const pwAllValid = regPassword.length > 0 && pwRules.every(r => r.test(regPassword));
+
   const handleLogin = async () => {
     if (!loginUsername || !loginPassword) {
       setAuthError('Please enter your username and password.');
@@ -60,15 +70,20 @@ function MainApp() {
       setAuthError('Passwords do not match.');
       return;
     }
-    if (regPassword.length < 6) {
-      setAuthError('Password must be at least 6 characters.');
+    if (!pwAllValid) {
+      setAuthError('Please meet all password requirements below.');
       return;
     }
     setAuthError('');
     try {
       await signUp(regUsername, regPassword, regName, joinRole || 'player', regCode.trim());
     } catch (e) {
-      setAuthError(e.message || 'Registration failed. Please try again.');
+      const msg = e.message || '';
+      if (msg.toLowerCase().includes('weak') || msg.toLowerCase().includes('easy to guess') || msg.toLowerCase().includes('pwned')) {
+        setAuthError('This password is too common or easy to guess. Try a longer passphrase or add random characters.');
+      } else {
+        setAuthError(msg || 'Registration failed. Please try again.');
+      }
     }
   };
 
@@ -138,9 +153,26 @@ function MainApp() {
             placeholder="Username" autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
           <div style={{ position: 'relative', width: '100%' }}>
             <input type={showRegPw ? 'text' : 'password'} value={regPassword} onChange={e => { setRegPassword(e.target.value); setAuthError(''); }}
-              placeholder="Password (min 6 characters)" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+              placeholder="Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
             <EyeToggle show={showRegPw} onToggle={() => setShowRegPw(v => !v)} />
           </div>
+          {regPassword.length > 0 && (
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: '10px 12px', marginBottom: 8, marginTop: -4 }}>
+              {pwRules.map(rule => {
+                const pass = rule.test(regPassword);
+                return (
+                  <div key={rule.label} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: pass ? '#4ade80' : 'rgba(255,255,255,0.35)', lineHeight: 1 }}>
+                      {pass ? '✓' : '○'}
+                    </span>
+                    <span style={{ fontSize: 10, fontFamily: F, fontWeight: 600, color: pass ? '#4ade80' : 'rgba(255,255,255,0.45)' }}>
+                      {rule.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div style={{ position: 'relative', width: '100%' }}>
             <input type={showRegConfirmPw ? 'text' : 'password'} value={regConfirm} onChange={e => { setRegConfirm(e.target.value); setAuthError(''); }}
               onKeyDown={e => e.key === 'Enter' && handleRegister()}
