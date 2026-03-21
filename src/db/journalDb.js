@@ -30,6 +30,8 @@ export async function loadRecentSessionsForPlayer(playerId) {
 
 export async function saveJournalEntry(entry, userId) {
     const payload = { ...entry, player_id: userId, updated_at: new Date().toISOString() };
+    // Free-form entries may not have a session_id
+    if (!payload.session_id) payload.session_id = null;
 
     // Check if this is an update vs insert
     if (payload.id) {
@@ -50,6 +52,17 @@ export async function saveJournalEntry(entry, userId) {
         if (error) throw error;
         return data;
     }
+}
+
+export async function updateJournalEntry(id, updates) {
+    const { data, error } = await supabase
+        .from('journal_entries')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
 }
 
 export async function loadJournalForSession(playerId, sessionId) {

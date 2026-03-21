@@ -102,6 +102,7 @@ const COACH_LABELS = ['', 'Novice', 'Developing', 'Competent', 'Advanced', 'Elit
 
 export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix }) {
     const [openIdx, setOpenIdx] = useState(null);
+    const mobile = !isDesktop();
     return (
         <div style={{ display: 'grid', gridTemplateColumns: isDesktop() ? 'repeat(3, 1fr)' : '1fr', gap: 6 }}>
             {items.map((item, i) => {
@@ -120,139 +121,93 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                         gridColumn: isOpen && isDesktop() ? '1 / -1' : undefined,
                         boxShadow: isOpen ? `0 4px 16px ${color}15` : 'none',
                     }}>
-                        {/* ── Collapsed tile header ── */}
-                        <div
-                            onClick={() => setOpenIdx(isOpen ? null : i)}
-                            style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: isOpen ? '10px 14px' : '10px 12px',
-                                cursor: 'pointer', userSelect: 'none',
-                                background: isOpen ? `linear-gradient(135deg, ${color}08, ${color}03)` : 'transparent',
-                                transition: 'background 0.2s',
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-                                {/* Green completion ring */}
+                        {/* ── Tile header with inline rating ── */}
+                        <div style={{ padding: '8px 10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                {/* Completion indicator */}
                                 <div style={{
-                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                                    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
                                     border: `2px solid ${done ? B.grn : B.g200}`,
                                     background: done ? `${B.grn}15` : 'transparent',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    transition: 'all 0.3s',
                                 }}>
-                                    {done ? (
-                                        <span style={{ fontSize: 11, color: B.grn, fontWeight: 800, lineHeight: 1 }}>✓</span>
-                                    ) : (
-                                        <span style={{ fontSize: 8, color: B.g400, fontWeight: 600 }}>—</span>
-                                    )}
+                                    {done ? <span style={{ fontSize: 10, color: B.grn, fontWeight: 800 }}>✓</span>
+                                         : <span style={{ fontSize: 7, color: B.g400 }}>—</span>}
                                 </div>
-                                <div style={{
-                                    fontSize: 11, fontWeight: 600, color: B.g800, fontFamily: F,
-                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                {/* Skill name — tap to expand definitions */}
+                                <div onClick={() => setOpenIdx(isOpen ? null : i)} style={{
+                                    flex: 1, fontSize: 11, fontWeight: 600, color: B.g800, fontFamily: F,
+                                    cursor: 'pointer', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
                                 }}>
                                     {item}
                                 </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                {done && !isOpen && (
-                                    <div style={{
-                                        fontSize: 9, fontWeight: 700, color: B.w, fontFamily: F,
-                                        background: color, borderRadius: 4, padding: '2px 6px',
-                                        lineHeight: 1.3,
-                                    }}>
-                                        {v}/5
-                                    </div>
-                                )}
-                                <span style={{
-                                    fontSize: 10, color: B.g400, transition: 'transform 0.25s',
+                                {defs && <span onClick={() => setOpenIdx(isOpen ? null : i)} style={{
+                                    fontSize: 10, color: B.g400, cursor: 'pointer', flexShrink: 0,
                                     transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
-                                    display: 'inline-block',
-                                }}>▾</span>
+                                    transition: 'transform 0.25s', display: 'inline-block',
+                                }}>▾</span>}
+                            </div>
+                            {/* ── Inline quick-rate buttons ── */}
+                            <div style={{ display: 'flex', gap: mobile ? 6 : 5, justifyContent: 'space-between' }}>
+                                {[1, 2, 3, 4, 5].map(n => {
+                                    const sel = v === n;
+                                    const labels = defs ? COACH_LABELS : RATING_LABELS;
+                                    return (
+                                        <button key={n} onClick={() => onRate(k, v === n ? 0 : n)}
+                                            style={{
+                                                flex: 1, minHeight: mobile ? 38 : 32, maxWidth: mobile ? 64 : 56,
+                                                border: sel ? `2px solid ${color}` : `1.5px solid ${B.g200}`,
+                                                borderRadius: 8,
+                                                background: sel ? `${color}15` : B.w,
+                                                cursor: 'pointer',
+                                                display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center', gap: 1,
+                                                padding: '4px 2px',
+                                                transition: 'all 0.15s',
+                                                boxShadow: sel ? `0 1px 4px ${color}25` : 'none',
+                                            }}
+                                        >
+                                            <div style={{
+                                                fontSize: mobile ? 14 : 12, fontWeight: 800,
+                                                color: sel ? color : B.g400, fontFamily: F,
+                                            }}>{n}</div>
+                                            <div style={{
+                                                fontSize: 7, fontWeight: 600,
+                                                color: sel ? color : B.g400,
+                                                fontFamily: F, lineHeight: 1.1,
+                                                textAlign: 'center',
+                                            }}>{labels[n]}</div>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
-                        {/* ── Expanded accordion body ── */}
-                        {isOpen && (
-                            <div style={{ padding: '0 14px 14px' }}>
-                                {/* Rating tiles */}
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: isDesktop() ? 'repeat(5, 1fr)' : 'repeat(5, 1fr)',
-                                    gap: 6, marginBottom: defs ? 10 : 0,
-                                }}>
-                                    {[1, 2, 3, 4, 5].map(n => {
-                                        const sel = v === n;
-                                        const labels = defs ? COACH_LABELS : RATING_LABELS;
-                                        return (
-                                            <button key={n} onClick={() => onRate(k, v === n ? 0 : n)}
-                                                style={{
-                                                    border: sel ? `2px solid ${color}` : `1.5px solid ${B.g200}`,
-                                                    borderRadius: 8,
-                                                    background: sel ? `${color}12` : B.w,
-                                                    padding: '8px 4px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s',
-                                                    display: 'flex', flexDirection: 'column',
-                                                    alignItems: 'center', gap: 3,
-                                                    boxShadow: sel ? `0 2px 8px ${color}20` : 'none',
-                                                }}
-                                            >
-                                                <div style={{
-                                                    width: 26, height: 26, borderRadius: '50%',
-                                                    border: `2px solid ${sel ? color : B.g200}`,
-                                                    background: sel ? color : 'transparent',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    fontSize: 11, fontWeight: 800,
-                                                    color: sel ? B.w : B.g400, fontFamily: F,
-                                                    transition: 'all 0.2s',
-                                                }}>{n}</div>
-                                                <div style={{
-                                                    fontSize: 8, fontWeight: 700, color: sel ? color : B.g400,
-                                                    fontFamily: F, textTransform: 'uppercase', letterSpacing: 0.3,
-                                                    lineHeight: 1.2, textAlign: 'center',
-                                                }}>{labels[n]}</div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {/* Definition text for selected rating */}
-                                {defs && v > 0 && (
+                        {/* ── Expanded definition (tap skill name to toggle) ── */}
+                        {isOpen && defs && (
+                            <div style={{ padding: '0 10px 10px' }}>
+                                {v > 0 ? (
                                     <div style={{
                                         background: `${color}08`, borderRadius: 8,
                                         padding: '8px 12px', border: `1px solid ${color}20`,
-                                        marginBottom: 6,
                                     }}>
                                         <div style={{ fontSize: 10, color: color, fontWeight: 700, fontFamily: F, marginBottom: 2 }}>
-                                            Level {v} — {(defs === SKILL_DEFS?.[item] ? COACH_LABELS : RATING_LABELS)[v]}
+                                            Level {v} — {COACH_LABELS[v]}
                                         </div>
                                         <div style={{ fontSize: 10, color: B.g600, fontFamily: F, lineHeight: 1.5 }}>
                                             {defs[v]}
                                         </div>
                                     </div>
-                                )}
-
-                                {/* All definitions (collapsed by default, show on tap) */}
-                                {defs && v === 0 && (
-                                    <div style={{
-                                        background: B.g50, borderRadius: 8, padding: '8px 10px',
-                                        border: `1px solid ${B.g200}`,
-                                    }}>
+                                ) : (
+                                    <div style={{ background: B.g50, borderRadius: 8, padding: '8px 10px', border: `1px solid ${B.g200}` }}>
                                         <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                            Tap a rating to see its definition
+                                            Scoring guide
                                         </div>
                                         {[1, 2, 3, 4, 5].map(n => (
-                                            <div key={n} style={{
-                                                display: 'flex', gap: 6, marginBottom: n < 5 ? 3 : 0,
-                                                alignItems: 'flex-start', opacity: 0.7,
-                                            }}>
-                                                <div style={{
-                                                    fontSize: 8, fontWeight: 800, color: B.g400, fontFamily: F,
-                                                    width: 12, flexShrink: 0, marginTop: 1,
-                                                }}>{n}.</div>
-                                                <div style={{
-                                                    fontSize: 9, color: B.g500, fontFamily: F, lineHeight: 1.4,
-                                                }}>{defs[n]}</div>
+                                            <div key={n} style={{ display: 'flex', gap: 6, marginBottom: n < 5 ? 3 : 0, alignItems: 'flex-start', opacity: 0.7 }}>
+                                                <div style={{ fontSize: 8, fontWeight: 800, color: B.g400, fontFamily: F, width: 12, flexShrink: 0, marginTop: 1 }}>{n}.</div>
+                                                <div style={{ fontSize: 9, color: B.g500, fontFamily: F, lineHeight: 1.4 }}>{defs[n]}</div>
                                             </div>
                                         ))}
                                     </div>

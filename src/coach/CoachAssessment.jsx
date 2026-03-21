@@ -2,7 +2,7 @@
 // Extracted from the monolith App.jsx for standalone DNA Profile system.
 // Contains: player roster, survey view, assessment pages, PDI summary, report card generation.
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useEngine } from "../context/EngineContext";
 
@@ -20,10 +20,131 @@ import { COACH_DEFS } from "../data/skillDefinitions";
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring } from "../shared/FormComponents";
 import { SaveToast, useSaveStatus } from "../shared/SaveToast";
 
-// ═══ REPORT CARD (lazy-loaded — pulls in html2canvas + jsPDF) ═══
+// ═══ LAZY-LOADED COMPONENTS ═══
 const ReportCard = React.lazy(() => import("./ReportCard"));
 const EngineGuide = React.lazy(() => import("./EngineGuide"));
+const AdminDashboard = React.lazy(() => import("./AdminDashboard"));
+const AdminProfiles = React.lazy(() => import("./AdminProfiles"));
+const SquadAssignment = React.lazy(() => import("./SquadAssignment"));
+
+// ═══ BOTTOM NAV BAR ═══
+const NAV_ITEMS_ADMIN = [
+    { id: 'list', label: 'Roster', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+    { id: 'admin', label: 'Dashboard', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
+    { id: 'profiles', label: 'Profiles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
+    { id: 'squads', label: 'Squads', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> },
+];
+const NAV_ITEMS_COACH = [NAV_ITEMS_ADMIN[0]]; // Coach only sees Roster
+
+const CoachNavBar = React.memo(({ active, onNavigate, isAdmin: showAdmin }) => {
+    const items = showAdmin ? NAV_ITEMS_ADMIN : NAV_ITEMS_COACH;
+    return (
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 56, background: B.w, borderTop: `1px solid ${B.g200}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 100, fontFamily: F }}>
+            {items.map(item => {
+                const isActive = active === item.id;
+                return (
+                    <button key={item.id} onClick={() => onNavigate(item.id)}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 12px', color: isActive ? B.nvD : B.g400, minWidth: 56 }}>
+                        <div style={{ color: isActive ? B.nvD : B.g400 }}>{item.icon}</div>
+                        <div style={{ fontSize: 9, fontWeight: isActive ? 800 : 600, letterSpacing: 0.3 }}>{item.label}</div>
+                    </button>
+                );
+            })}
+        </div>
+    );
+});
 import { useSessionState } from "../shared/useSessionState";
+
+// ── Confidence dot color helper (extracted to module level) ──
+const confDotColor = (v) => {
+    if (!v || v === 0) return B.g200;
+    if (v <= 2) return '#EF5350';
+    if (v === 3) return B.org;
+    return B.grn;
+};
+
+// ── Player Confidence Context Card (extracted to module level) ──
+const ConfidenceContext = React.memo(({ matchups, domain, title, color, sr }) => {
+    const hasData = matchups.some((_, i) => sr[`mc_${domain}_${i}_c`] > 0);
+    if (!hasData) return null;
+    return (
+        <div style={{ background: `${color}06`, border: `1px solid ${color}20`, borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-VIEW: {title}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>C = Confidence</div>
+                    <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>F = Frequency</div>
+                </div>
+            </div>
+            {matchups.map((m, i) => {
+                const cv = sr[`mc_${domain}_${i}_c`] || 0;
+                const fv = sr[`mc_${domain}_${i}_f`] || 0;
+                if (cv === 0 && fv === 0) return null;
+                const gap = cv > 0 && fv > 0 ? cv - fv : null;
+                return (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: i < matchups.length - 1 ? `1px solid ${color}10` : 'none' }}>
+                        <div style={{ flex: 1, fontSize: 10, color: B.g700, fontFamily: F, lineHeight: 1.3 }}>{m.conf}</div>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                            <div title={`Confidence: ${cv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', background: confDotColor(cv), color: B.w, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F }}>{cv || '—'}</div>
+                            <div title={`Frequency: ${fv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${confDotColor(fv)}`, color: confDotColor(fv), fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: 'transparent' }}>{fv || '—'}</div>
+                            {gap !== null && Math.abs(gap) >= 2 && <div style={{ fontSize: 8, fontWeight: 700, color: gap > 0 ? '#EF5350' : B.sky, fontFamily: F, minWidth: 14, textAlign: 'center' }}>{gap > 0 ? `+${gap}` : gap}</div>}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+});
+
+// ── Combined confidence summary (extracted to module level) ──
+const ConfidenceSummary = React.memo(({ sr, hasMC, hasBowling }) => {
+    if (!hasMC) return null;
+    let confSum = 0, confN = 0, freqSum = 0, freqN = 0;
+    const allDomains = [
+        { matchups: BAT_MATCHUPS, domain: 'bat' },
+        ...(hasBowling ? [{ matchups: BWL_MATCHUPS, domain: 'bwl' }] : []),
+        { matchups: MENTAL_MATCHUPS, domain: 'mnt' },
+    ];
+    allDomains.forEach(({ matchups, domain }) => {
+        matchups.forEach((_, i) => {
+            const cv = sr[`mc_${domain}_${i}_c`] || 0;
+            const fv = sr[`mc_${domain}_${i}_f`] || 0;
+            if (cv > 0) { confSum += cv; confN++; }
+            if (fv > 0) { freqSum += fv; freqN++; }
+        });
+    });
+    const confAvg = confN > 0 ? (confSum / confN).toFixed(1) : '—';
+    const freqAvg = freqN > 0 ? (freqSum / freqN).toFixed(1) : '—';
+    const gap = confN > 0 && freqN > 0 ? ((confSum / confN) - (freqSum / freqN)).toFixed(1) : null;
+    let sagiLabel = 'Insufficient data';
+    let sagiColor = B.g400;
+    if (gap !== null) {
+        const g = parseFloat(gap);
+        if (g > 0.5) { sagiLabel = 'Over-estimates'; sagiColor = '#EF5350'; }
+        else if (g < -0.5) { sagiLabel = 'Under-estimates'; sagiColor = B.sky; }
+        else { sagiLabel = 'Self-aware'; sagiColor = B.grn; }
+    }
+
+    return (
+        <div style={{ background: B.nvD, borderRadius: 10, padding: '12px 14px', marginBottom: 10, color: B.w }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F, letterSpacing: 1.5, marginBottom: 8 }}>PLAYER SELF-PERCEPTION</div>
+            <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', gap: 8 }}>
+                <div>
+                    <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{confAvg}</div>
+                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Confidence</div>
+                </div>
+                <div>
+                    <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{freqAvg}</div>
+                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Frequency</div>
+                </div>
+                <div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: sagiColor, fontFamily: F }}>{gap !== null ? (parseFloat(gap) > 0 ? `+${gap}` : gap) : '—'}</div>
+                    <div style={{ fontSize: 8, color: sagiColor, fontFamily: F, fontWeight: 600 }}>{sagiLabel}</div>
+                </div>
+            </div>
+        </div>
+    );
+});
 
 export default function CoachAssessment() {
     const { session, portal, isAdmin, signOut } = useAuth();
@@ -37,6 +158,11 @@ export default function CoachAssessment() {
     const [cPage, setCPage] = useSessionState('rra_cPage', 0);
     const [reportPlayer, setReportPlayer] = useState(null);
     const [showGuide, setShowGuide] = useState(false);
+
+    // Roster search/sort/filter
+    const [rosterSearch, setRosterSearch] = useState('');
+    const [rosterSort, setRosterSort] = useState('name'); // name | pdi-desc | ccm-desc | assessed
+    const [rosterFilter, setRosterFilter] = useState('all'); // all | assessed | unassessed | role-ids
     const saveStatusHook = useSaveStatus();
 
     // ── Admin accounts panel state ──
@@ -69,8 +195,64 @@ export default function CoachAssessment() {
 
     const sp = selP ? players.find(p => p.id === selP) : null;
 
+    // Memoize PDI/CCM computation for roster — avoids recalculating on every search/filter/render
+    const rosterScores = useMemo(() => {
+        const map = {};
+        players.filter(p => p.submitted).forEach(p => {
+            const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
+            const hasCd = Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
+            const hasSelf = Object.keys(p.self_ratings || {}).some(k => k.startsWith('t1_'));
+            const hasData = hasCd || hasSelf || (p.grades?.length > 0);
+            const dn = hasData ? calcPDI({ ...p.cd, _dob: p.dob }, p.self_ratings, p.role, ccmR, dbWeights, engineConst, p.grades, {}, p.topBat, p.topBowl, compTiers) : null;
+            let overallScore = null;
+            if (dn && dn.pdi > 0) {
+                const pathS = dn.pdiPct;
+                const cohortS = calcCohortPercentile(dn.pdi, players, compTiers, dbWeights, engineConst);
+                const ageS = calcAgeScore(ccmR.arm, engineConst);
+                overallScore = Math.round((pathS + cohortS + ageS) / 3);
+            }
+            map[p.id] = { ccmR, dn, hasCd, hasSelf, hasData, overallScore };
+        });
+        return map;
+    }, [players, compTiers, dbWeights, engineConst]);
+
+    const handleNav = (viewId) => { setCView(viewId); goTop(); };
+    const showNavBar = !['assess', 'survey', 'report'].includes(cView);
+
+    // ═══ ADMIN DASHBOARD ═══
+    if (cView === "admin") return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading dashboard...</div>}>
+                <AdminDashboard onBack={() => setCView("list")} />
+            </Suspense>
+            {showNavBar && <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />}
+        </div>
+    );
+
+    // ═══ ADMIN PROFILES ═══
+    if (cView === "profiles" && isAdmin) return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Hdr label="PLAYER PROFILES" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading profiles...</div>}>
+                <AdminProfiles />
+            </Suspense>
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+        </div>
+    );
+
+    // ═══ SQUAD ASSIGNMENT ═══
+    if (cView === "squads" && isAdmin) return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Hdr label="SQUAD ALLOCATION" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading squad engine...</div>}>
+                <SquadAssignment />
+            </Suspense>
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+        </div>
+    );
+
     // ═══ PLAYER ROSTER ═══
-    if (cView === "list") return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
+    if (cView === "list") return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50, paddingBottom: 60 }}>
         <Hdr label="COACH PORTAL" onLogoClick={signOut} />
         <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -83,28 +265,67 @@ export default function CoachAssessment() {
         </div>
 
         <div style={{ padding: 12, ...getDkWrap() }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <SecH title={`Player Roster (${players.filter(p => p.submitted).length})`} sub="Tap player to view survey or assess" />
+            {/* ── Search, Sort, Filter ── */}
+            <div style={{ marginBottom: 10 }}>
+                <input value={rosterSearch} onChange={e => setRosterSearch(e.target.value)} placeholder="Search players..."
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[{ id: 'name', label: 'A-Z' }, { id: 'pdi-desc', label: 'PDI ↓' }, { id: 'ccm-desc', label: 'CCM ↓' }, { id: 'assessed', label: 'Assessed' }].map(s => (
+                        <button key={s.id} onClick={() => setRosterSort(s.id)}
+                            style={{ padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${rosterSort === s.id ? B.bl : B.g200}`, background: rosterSort === s.id ? `${B.bl}10` : 'transparent', fontSize: 9, fontWeight: rosterSort === s.id ? 700 : 500, color: rosterSort === s.id ? B.bl : B.g400, fontFamily: F, cursor: 'pointer' }}>
+                            {s.label}
+                        </button>
+                    ))}
+                    <select value={rosterFilter} onChange={e => setRosterFilter(e.target.value)}
+                        style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 9, fontFamily: F, color: B.g600 }}>
+                        <option value="all">All Players</option>
+                        <option value="assessed">Assessed</option>
+                        <option value="unassessed">Unassessed</option>
+                        {ROLES.map(r => <option key={r.id} value={`role-${r.id}`}>{r.label}</option>)}
+                    </select>
+                </div>
             </div>
+
+            {/* ── Batch progress ── */}
+            {(() => {
+                const submitted = players.filter(p => p.submitted);
+                const assessed = submitted.filter(p => Object.keys(p.cd || {}).some(k => k.startsWith('t1_')));
+                const pct = submitted.length > 0 ? Math.round((assessed.length / submitted.length) * 100) : 0;
+                return (
+                    <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: B.g200, borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${B.bl}, ${B.pk})`, borderRadius: 3, transition: 'width 0.3s' }} />
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, whiteSpace: 'nowrap' }}>{assessed.length}/{submitted.length} assessed</div>
+                    </div>
+                );
+            })()}
+
             <div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
                 {loading && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>Loading players...</div>}
                 {!loading && players.filter(p => p.submitted).length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>No submitted players yet. Players will appear here once they complete onboarding.</div>}
-                {players.filter(p => p.submitted).map(p => {
-                    const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
-                    const hasCd = Object.keys(p.cd || {}).filter(k => k.match(/^t1_/)).length > 0;
-                    const hasSelf = Object.keys(p.self_ratings || {}).some(k => k.match(/^t1_/));
-                    const hasData = hasCd || hasSelf || (p.grades?.length > 0);
-                    const dn = hasData ? calcPDI({ ...p.cd, _dob: p.dob }, p.self_ratings, p.role, ccmR, dbWeights, engineConst, p.grades, {}, p.topBat, p.topBowl, compTiers) : null;
+                {players.filter(p => p.submitted).filter(p => {
+                    // Search filter (client-side, instant)
+                    if (rosterSearch && !p.name?.toLowerCase().includes(rosterSearch.toLowerCase())) return false;
+                    // Category filter
+                    if (rosterFilter === 'assessed') return Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
+                    if (rosterFilter === 'unassessed') return !Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
+                    if (rosterFilter.startsWith('role-')) return p.role === rosterFilter.replace('role-', '');
+                    return true;
+                }).sort((a, b) => {
+                    if (rosterSort === 'name') return (a.name || '').localeCompare(b.name || '');
+                    if (rosterSort === 'assessed') {
+                        const aA = rosterScores[a.id]?.hasCd ? 1 : 0;
+                        const bA = rosterScores[b.id]?.hasCd ? 1 : 0;
+                        return bA - aA;
+                    }
+                    if (rosterSort === 'pdi-desc') return (rosterScores[b.id]?.dn?.pdi || 0) - (rosterScores[a.id]?.dn?.pdi || 0);
+                    if (rosterSort === 'ccm-desc') return (rosterScores[b.id]?.ccmR?.ccm || 0) - (rosterScores[a.id]?.ccmR?.ccm || 0);
+                    return 0;
+                }).map(p => {
+                    const { ccmR, dn, hasCd, hasSelf, hasData, overallScore } = rosterScores[p.id] || {};
                     const a = getAge(p.dob), br = getBracket(p.dob), ro = ROLES.find(r => r.id === p.role);
                     const ini = p.name ? p.name.split(" ").map(w => w[0]).join("").slice(0, 2) : "?";
-
-                    let overallScore = null;
-                    if (dn && dn.pdi > 0) {
-                        const pathS = dn.pdiPct;
-                        const cohortS = calcCohortPercentile(dn.pdi, players, compTiers, dbWeights, engineConst);
-                        const ageS = calcAgeScore(ccmR.arm, engineConst);
-                        overallScore = Math.round((pathS + cohortS + ageS) / 3);
-                    }
 
                     return (<div key={p.id} style={{ ...sCard, cursor: "pointer", display: "flex", gap: 10 }} onClick={() => { setSelP(p.id); setCView("survey"); goTop(); }}>
                         <div style={{ width: 40, height: 40, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -126,8 +347,8 @@ export default function CoachAssessment() {
                     </div>);
                 })}
             </div>
-            <button onClick={signOut} style={backBtn}>← Sign Out</button>
         </div>
+        <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} />
     </div>);
 
     // ═══ ACCOUNTS PANEL (admin only) ═══
@@ -365,101 +586,9 @@ export default function CoachAssessment() {
         const sr = sp.self_ratings || {};
         const hasMC = Object.keys(sr).some(k => k.startsWith('mc_'));
 
-        // ── Confidence dot color helper ──
-        const confDotColor = (v) => {
-            if (!v || v === 0) return B.g200;
-            if (v <= 2) return '#EF5350';
-            if (v === 3) return B.org;
-            return B.grn;
-        };
-
-        // ── Player Confidence Context Card ──
-        const ConfidenceContext = ({ matchups, domain, title, color }) => {
-            const hasData = matchups.some((_, i) => sr[`mc_${domain}_${i}_c`] > 0);
-            if (!hasData) return null;
-            return (
-                <div style={{ background: `${color}06`, border: `1px solid ${color}20`, borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-VIEW: {title}</div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>C = Confidence</div>
-                            <div style={{ fontSize: 8, color: B.g400, fontFamily: F }}>F = Frequency</div>
-                        </div>
-                    </div>
-                    {matchups.map((m, i) => {
-                        const cv = sr[`mc_${domain}_${i}_c`] || 0;
-                        const fv = sr[`mc_${domain}_${i}_f`] || 0;
-                        if (cv === 0 && fv === 0) return null;
-                        const gap = cv > 0 && fv > 0 ? cv - fv : null;
-                        return (
-                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: i < matchups.length - 1 ? `1px solid ${color}10` : 'none' }}>
-                                <div style={{ flex: 1, fontSize: 10, color: B.g700, fontFamily: F, lineHeight: 1.3 }}>{m.conf}</div>
-                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-                                    <div title={`Confidence: ${cv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', background: confDotColor(cv), color: B.w, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F }}>{cv || '—'}</div>
-                                    <div title={`Frequency: ${fv}/5`} style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${confDotColor(fv)}`, color: confDotColor(fv), fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: 'transparent' }}>{fv || '—'}</div>
-                                    {gap !== null && Math.abs(gap) >= 2 && <div style={{ fontSize: 8, fontWeight: 700, color: gap > 0 ? '#EF5350' : B.sky, fontFamily: F, minWidth: 14, textAlign: 'center' }}>{gap > 0 ? `+${gap}` : gap}</div>}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            );
-        };
-
-        // ── Combined confidence summary for top of assessment ──
-        const ConfidenceSummary = () => {
-            if (!hasMC) return null;
-            // Calculate overall confidence vs frequency gap
-            let confSum = 0, confN = 0, freqSum = 0, freqN = 0;
-            const allDomains = [
-                { matchups: BAT_MATCHUPS, domain: 'bat' },
-                ...(hasBowling ? [{ matchups: BWL_MATCHUPS, domain: 'bwl' }] : []),
-                { matchups: MENTAL_MATCHUPS, domain: 'mnt' },
-            ];
-            allDomains.forEach(({ matchups, domain }) => {
-                matchups.forEach((_, i) => {
-                    const cv = sr[`mc_${domain}_${i}_c`] || 0;
-                    const fv = sr[`mc_${domain}_${i}_f`] || 0;
-                    if (cv > 0) { confSum += cv; confN++; }
-                    if (fv > 0) { freqSum += fv; freqN++; }
-                });
-            });
-            const confAvg = confN > 0 ? (confSum / confN).toFixed(1) : '—';
-            const freqAvg = freqN > 0 ? (freqSum / freqN).toFixed(1) : '—';
-            const gap = confN > 0 && freqN > 0 ? ((confSum / confN) - (freqSum / freqN)).toFixed(1) : null;
-            let sagiLabel = 'Insufficient data';
-            let sagiColor = B.g400;
-            if (gap !== null) {
-                const g = parseFloat(gap);
-                if (g > 0.5) { sagiLabel = 'Over-estimates'; sagiColor = '#EF5350'; }
-                else if (g < -0.5) { sagiLabel = 'Under-estimates'; sagiColor = B.sky; }
-                else { sagiLabel = 'Self-aware'; sagiColor = B.grn; }
-            }
-
-            return (
-                <div style={{ background: B.nvD, borderRadius: 10, padding: '12px 14px', marginBottom: 10, color: B.w }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F, letterSpacing: 1.5, marginBottom: 8 }}>PLAYER SELF-PERCEPTION</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', gap: 8 }}>
-                        <div>
-                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{confAvg}</div>
-                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Confidence</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F }}>{freqAvg}</div>
-                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)', fontFamily: F }}>Frequency</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 22, fontWeight: 800, color: sagiColor, fontFamily: F }}>{gap !== null ? (parseFloat(gap) > 0 ? `+${gap}` : gap) : '—'}</div>
-                            <div style={{ fontSize: 8, color: sagiColor, fontFamily: F, fontWeight: 600 }}>{sagiLabel}</div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
         const renderAP = () => {
             if (cPage === 0) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
-                <ConfidenceSummary />
+                <ConfidenceSummary sr={sr} hasMC={hasMC} hasBowling={hasBowling} />
                 <SecH title="Batting Archetype" sub="Select the one archetype that best describes this player's batting identity" />
                 {sp.playerBatArch && <div style={{ background: `${B.pk}08`, border: `1px solid ${B.pk}30`, borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: B.pk, fontFamily: F, letterSpacing: 0.5 }}>PLAYER SELF-ID: {BAT_ARCH.find(a => a.id === sp.playerBatArch)?.nm || sp.playerBatArch}{sp.playerBatArchSecondary ? ` + ${BAT_ARCH.find(a => a.id === sp.playerBatArchSecondary)?.nm || sp.playerBatArchSecondary}` : ''}</div>
@@ -479,15 +608,21 @@ export default function CoachAssessment() {
                     <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>{a.sub}</div>
                 </div>))}</div>
                 <SecH title="Phase Effectiveness" />
-                <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F, marginTop: 4, marginBottom: 6 }}>Batting</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F }}>Batting</div>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{PHASES.filter(p => cd[`pb_${p.id}`] > 0).length}/{PHASES.length} rated</div>
+                </div>
                 <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pb_${i}`, cd[`pb_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pb_${PHASES[idx].id}`, v); }} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="pb" />
-                <div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F, marginTop: 8, marginBottom: 6 }}>Bowling</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F }}>Bowling</div>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{PHASES.filter(p => cd[`pw_${p.id}`] > 0).length}/{PHASES.length} rated</div>
+                </div>
                 <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pw_${i}`, cd[`pw_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pw_${PHASES[idx].id}`, v); }} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="pw" />
             </div>);
 
             if (cPage === 1) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
-                <ConfidenceContext matchups={BAT_MATCHUPS} domain="bat" title="BATTING" color={B.pk} />
-                {hasBowling && <ConfidenceContext matchups={BWL_MATCHUPS} domain="bwl" title="BOWLING" color={B.bl} />}
+                <ConfidenceContext matchups={BAT_MATCHUPS} domain="bat" title="BATTING" color={B.pk} sr={sr} />
+                {hasBowling && <ConfidenceContext matchups={BWL_MATCHUPS} domain="bwl" title="BOWLING" color={B.bl} sr={sr} />}
                 <SecH title={t.pL} sub="Rate 1-5" />
                 <div style={{ background: B.g100, borderRadius: 8, padding: '8px 12px', marginBottom: 10, lineHeight: 1.6 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Standardised Rating Rubric</div>
@@ -500,18 +635,23 @@ export default function CoachAssessment() {
                     </div>
                     <div style={{ fontSize: 9, color: B.pk, fontFamily: F, marginTop: 4, fontWeight: 600 }}>Tap ⓘ next to each item for detailed scoring criteria.</div>
                 </div>
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{t.pri.filter((_, i) => cd[`t1_${i}`] > 0).length}/{t.pri.length} rated</div>
                 <AssGrid items={t.pri} values={cd} onRate={cU} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="t1" />
                 <SecH title={t.sL} />
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{t.sec.filter((_, i) => cd[`t2_${i}`] > 0).length}/{t.sec.length} rated</div>
                 <AssGrid items={t.sec} values={cd} onRate={cU} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="t2" />
             </div>);
 
             if (cPage === 2) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
-                <ConfidenceContext matchups={MENTAL_MATCHUPS} domain="mnt" title="MENTAL & CHARACTER" color={B.prp} />
+                <ConfidenceContext matchups={MENTAL_MATCHUPS} domain="mnt" title="MENTAL & CHARACTER" color={B.prp} sr={sr} />
                 <SecH title="Game Intelligence" />
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{IQ_ITEMS.filter((_, i) => cd[`iq_${i}`] > 0).length}/{IQ_ITEMS.length} rated</div>
                 <AssGrid items={IQ_ITEMS} values={cd} onRate={cU} color={B.sky} SKILL_DEFS={COACH_DEFS} keyPrefix="iq" />
                 <SecH title="Mental & Character" sub="Royals Way aligned" />
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{MN_ITEMS.filter((_, i) => cd[`mn_${i}`] > 0).length}/{MN_ITEMS.length} rated</div>
                 <AssGrid items={MN_ITEMS} values={cd} onRate={cU} color={B.prp} SKILL_DEFS={COACH_DEFS} keyPrefix="mn" />
                 <SecH title="Physical & Athletic" />
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{(PH_MAP[sp.role] || PH_MAP.batter).filter((_, i) => cd[`ph_${i}`] > 0).length}/{(PH_MAP[sp.role] || PH_MAP.batter).length} rated</div>
                 <AssGrid items={PH_MAP[sp.role] || PH_MAP.batter} values={cd} onRate={cU} color={B.nv} SKILL_DEFS={COACH_DEFS} keyPrefix="ph" />
             </div>);
 
@@ -676,17 +816,30 @@ export default function CoachAssessment() {
             <Hdr label="COACH PORTAL" onLogoClick={signOut} />
             <SaveToast status={saveStatusHook.status} message={saveStatusHook.message} />
             {showGuide && <Suspense fallback={null}><EngineGuide onClose={() => setShowGuide(false)} /></Suspense>}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: B.w, borderBottom: `1px solid ${B.g200}` }}>
-                <div style={{ width: 30, height: 30, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <span style={{ color: B.w, fontSize: 11, fontWeight: 800, fontFamily: F }}>{ini}</span>
-                </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{sp.name}</div>
-                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{ro?.label} • {sp.club}</div>
-                </div>
-                <button onClick={() => setShowGuide(true)} style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid ${B.bl}`, background: `${B.bl}10`, color: B.bl, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, padding: 0, flexShrink: 0 }} title="How the engine works">ⓘ</button>
-                <button onClick={() => setCView("survey")} style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: "none", border: `1px solid ${B.bl}`, borderRadius: 4, padding: "3px 6px", cursor: "pointer", fontFamily: F }}>Survey</button>
-            </div>
+            {/* Player nav bar with prev/next */}
+            {(() => {
+                const submitted = players.filter(p => p.submitted);
+                const currentIdx = submitted.findIndex(p => p.id === sp.id);
+                const prevP = currentIdx > 0 ? submitted[currentIdx - 1] : null;
+                const nextP = currentIdx < submitted.length - 1 ? submitted[currentIdx + 1] : null;
+                return (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: B.w, borderBottom: `1px solid ${B.g200}` }}>
+                        <button disabled={!prevP} onClick={() => { if (prevP) { setSelP(prevP.id); setCPage(0); goTop(); } }}
+                            style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${prevP ? B.g200 : 'transparent'}`, background: 'transparent', color: prevP ? B.g600 : B.g200, fontSize: 14, cursor: prevP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>←</button>
+                        <div style={{ width: 30, height: 30, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <span style={{ color: B.w, fontSize: 11, fontWeight: 800, fontFamily: F }}>{ini}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{sp.name}</div>
+                            <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{ro?.label} • {sp.club} • {currentIdx + 1}/{submitted.length}</div>
+                        </div>
+                        <button onClick={() => setShowGuide(true)} style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid ${B.bl}`, background: `${B.bl}10`, color: B.bl, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, padding: 0, flexShrink: 0 }} title="How the engine works">ⓘ</button>
+                        <button onClick={() => setCView("survey")} style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: "none", border: `1px solid ${B.bl}`, borderRadius: 4, padding: "3px 6px", cursor: "pointer", fontFamily: F }}>Survey</button>
+                        <button disabled={!nextP} onClick={() => { if (nextP) { setSelP(nextP.id); setCPage(0); goTop(); } }}
+                            style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${nextP ? B.g200 : 'transparent'}`, background: 'transparent', color: nextP ? B.g600 : B.g200, fontSize: 14, cursor: nextP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>→</button>
+                    </div>
+                );
+            })()}
 
             <div style={{ padding: isDesktop() ? '8px 16px' : '6px 12px', background: B.g50, borderBottom: `1px solid ${B.g200}`, display: "flex", gap: isDesktop() ? 6 : 4, overflowX: "auto", justifyContent: isDesktop() ? 'center' : 'flex-start' }}>
                 {pgN.map((n, i) => (<button key={i} onClick={() => { setCPage(i); goTop(); }}
@@ -699,11 +852,11 @@ export default function CoachAssessment() {
                 <button onClick={() => {
                     if (cPage > 0) { setCPage(p => p - 1); goTop(); }
                     else { setCView("survey"); goTop(); }
-                }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>
+                }} style={{ padding: isDesktop() ? "8px 14px" : "12px 18px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>
                     ← {cPage > 0 ? "Back" : "Survey"}
                 </button>
 
-                {cPage < 3 && <button onClick={() => { setCPage(p => p + 1); goTop(); }} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: `linear-gradient(135deg,${B.bl},${B.pk})`, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>Next →</button>}
+                {cPage < 3 && <button onClick={() => { setCPage(p => p + 1); goTop(); }} style={{ padding: isDesktop() ? "8px 14px" : "12px 18px", borderRadius: 6, border: "none", background: `linear-gradient(135deg,${B.bl},${B.pk})`, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>Next →</button>}
 
                 {cPage === 3 && <button onClick={async () => {
                     setReportPlayer(sp);
@@ -711,9 +864,9 @@ export default function CoachAssessment() {
                     const el = document.getElementById('rra-report-card');
                     if (el) { try { const { generateReportPDF } = await import("./reportGenerator"); await generateReportPDF(el, sp.name); } catch (e) { console.error('PDF generation error:', e); saveStatusHook.setError('PDF generation failed — try again'); } }
                     setReportPlayer(null);
-                }} style={{ padding: '8px 14px', borderRadius: 6, border: `1px solid ${B.bl}`, background: 'transparent', fontSize: 11, fontWeight: 700, color: B.bl, cursor: 'pointer', fontFamily: F }}>📄 Generate Report</button>}
+                }} style={{ padding: isDesktop() ? '8px 14px' : '12px 18px', borderRadius: 6, border: `1px solid ${B.bl}`, background: 'transparent', fontSize: 11, fontWeight: 700, color: B.bl, cursor: 'pointer', fontFamily: F }}>📄 Generate Report</button>}
 
-                {cPage === 3 && <button onClick={() => { setCView("list"); setSelP(null); goTop(); }} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: B.grn, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>✓ Done</button>}
+                {cPage === 3 && <button onClick={() => { setCView("list"); setSelP(null); goTop(); }} style={{ padding: isDesktop() ? "8px 14px" : "12px 18px", borderRadius: 6, border: "none", background: B.grn, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>✓ Done</button>}
             </div>
 
             {/* Hidden ReportCard for PDF capture */}

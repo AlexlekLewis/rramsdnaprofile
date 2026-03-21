@@ -3,12 +3,32 @@ import { useAuth } from "../context/AuthContext";
 import { B, F, getDkWrap, sCard } from "../data/theme";
 import Journal from "./Journal";
 import IDPView from "./IDPView";
+import PlayerDNA from "./PlayerDNA";
 import { loadAttendanceForPlayer } from "../db/observationDb";
 import { supabase } from "../supabaseClient";
 
+const PortalHeader = React.memo(({ title, showBack, onBack, onSignOut, userName }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: B.nvD }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {showBack && (
+                <button onClick={onBack} style={{ background: 'none', border: 'none', color: B.w, cursor: 'pointer', padding: 0 }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                </button>
+            )}
+            <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: B.w, fontFamily: F }}>{title}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontFamily: F }}>{userName}</div>
+            </div>
+        </div>
+        {!showBack && (
+            <button onClick={onSignOut} style={{ fontSize: 10, fontWeight: 700, color: B.red, background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+        )}
+    </div>
+));
+
 export default function PlayerPortal() {
     const { session, userProfile, signOut } = useAuth();
-    const [view, setView] = useState("home"); // home | journal | idp
+    const [view, setView] = useState("home"); // home | journal | idp | dna
     const [recentAtt, setRecentAtt] = useState([]);
     const [playerId, setPlayerId] = useState(null);
     const [programInfo, setProgramInfo] = useState(null);
@@ -38,7 +58,7 @@ export default function PlayerPortal() {
                 const { data: member } = await supabase.from('program_members').select('role, season').eq('auth_user_id', session.user.id).eq('active', true).maybeSingle();
                 const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).maybeSingle();
                 if (!cancelled && (member || program)) setProgramInfo({ programName: program?.name || null, season: member?.season || program?.season || null });
-            } catch {}
+            } catch (e) { console.warn('Program info fetch failed:', e.message); }
         }
         fetchData();
         return () => { cancelled = true; };
@@ -52,35 +72,24 @@ export default function PlayerPortal() {
         }
     };
 
-    const Header = ({ title, showBack }) => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: B.nvD }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {showBack && (
-                    <button onClick={() => setView('home')} style={{ background: 'none', border: 'none', color: B.w, cursor: 'pointer', padding: 0 }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-                    </button>
-                )}
-                <div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: B.w, fontFamily: F }}>{title}</div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontFamily: F }}>{userProfile?.full_name}</div>
-                </div>
-            </div>
-            {!showBack && (
-                <button onClick={handleSignOut} style={{ fontSize: 10, fontWeight: 700, color: B.red, background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
-            )}
+
+    if (view === "dna") return (
+        <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
+            <PortalHeader title="My DNA" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <PlayerDNA />
         </div>
     );
 
     if (view === "journal") return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
-            <Header title="My Journal" showBack />
+            <PortalHeader title="My Journal" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
             <Journal session={session} userProfile={userProfile} />
         </div>
     );
 
     if (view === "idp") return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
-            <Header title="My IDP" showBack />
+            <PortalHeader title="My IDP" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
             <IDPView session={session} userProfile={userProfile} />
         </div>
     );
@@ -88,7 +97,7 @@ export default function PlayerPortal() {
     // HOME VIEW
     return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
-            <Header title="Player Portal" />
+            <PortalHeader title="Player Portal" onSignOut={handleSignOut} userName={userProfile?.full_name} />
 
             <div style={{ padding: 16, ...getDkWrap() }}>
 
@@ -111,16 +120,21 @@ export default function PlayerPortal() {
                 </div>
 
                 {/* ═══ ACTION TILES ═══ */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-                    <div onClick={() => setView('journal')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s', ':active': { transform: 'scale(0.98)' } }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+                    <div onClick={() => setView('dna')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>🧬</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My DNA</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Your T20 identity & report</div>
+                    </div>
+                    <div onClick={() => setView('journal')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>📔</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Journal</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Reflect on your latest sessions</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Reflect on your sessions</div>
                     </div>
-                    <div onClick={() => setView('idp')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s', ':active': { transform: 'scale(0.98)' } }}>
+                    <div onClick={() => setView('idp')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>🎯</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My IDP</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Track goals & coach focus areas</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals & coach focus areas</div>
                     </div>
                 </div>
 

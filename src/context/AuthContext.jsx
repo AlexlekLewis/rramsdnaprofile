@@ -13,7 +13,7 @@ import {
 const AuthContext = createContext();
 
 // ── Dev bypass: add ?devRole=coach or ?devRole=player to URL on localhost ──
-const DEV_MODE = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+const DEV_MODE = import.meta.env.DEV && typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const DEV_ROLE_PARAM = DEV_MODE && new URLSearchParams(window.location.search).get('devRole');
 
 // ── Join link detection: ?join=player or ?join=coach ──

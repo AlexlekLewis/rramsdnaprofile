@@ -24,7 +24,7 @@ export async function signInWithUsername(username, password) {
             .select('auth_user_id, role, active')
             .eq('username', cleanUsername)
             .limit(1)
-            .single();
+            .maybeSingle();
 
         if (!directError && directData) {
             member = directData;
@@ -94,6 +94,9 @@ export async function signUpNewUser(username, password, fullName, role, code) {
         throw new Error(codeCheck.error || 'Invalid registration code.');
     }
 
+    // Store role BEFORE signUp — signUp auto-signs-in which triggers onAuthStateChange → upsertUserProfile
+    localStorage.setItem('rra_pending_role', role);
+
     // 1. Create Supabase Auth user
     const internalEmail = `${cleanUsername}@rradna.app`;
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -124,9 +127,6 @@ export async function signUpNewUser(username, password, fullName, role, code) {
     if (rpcResult && !rpcResult.success) {
         throw new Error(rpcResult.error || 'Registration failed.');
     }
-
-    // 3. Store role for post-login profile setup
-    localStorage.setItem('rra_pending_role', role);
 
     return signUpData;
 }
@@ -172,7 +172,7 @@ export async function upsertUserProfile(user) {
             .from('user_profiles')
             .select('role')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
         role = existing?.role || 'player';
     }
 
@@ -205,8 +205,8 @@ export async function loadUserProfile(userId) {
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error;
+    if (error) throw error;
     return data;
 }

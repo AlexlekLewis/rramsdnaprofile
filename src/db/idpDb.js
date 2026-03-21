@@ -38,6 +38,28 @@ export async function updateGoalProgress(id, progress) {
     return data;
 }
 
+export async function updateGoal(id, updates) {
+    const { data, error } = await supabase
+        .from('idp_goals')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+export async function completeGoal(id, reflectionNote) {
+    const { data, error } = await supabase
+        .from('idp_goals')
+        .update({ status: 'completed', progress: 100, reflection: reflectionNote || null, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
 export async function deleteGoal(id) {
     const { error } = await supabase
         .from('idp_goals')

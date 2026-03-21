@@ -12,11 +12,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ── Auth header helper ──
+async function getAuthHeaders() {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+}
+
 // ── AI report generation ──
 export async function generateDNAReport(payload) {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${supabaseUrl}/functions/v1/generate-dna-report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`AI generation failed: ${res.statusText}`);
@@ -24,10 +35,13 @@ export async function generateDNAReport(payload) {
 }
 
 // ── Slack notification helper (fire-and-forget) ──
-export function notifySlack(type, details) {
-    fetch(`${supabaseUrl}/functions/v1/slack-notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, details }),
-    }).catch(err => console.warn('Slack notify failed:', err));
+export async function notifySlack(type, details) {
+    try {
+        const headers = await getAuthHeaders();
+        await fetch(`${supabaseUrl}/functions/v1/slack-notify`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ type, details }),
+        });
+    } catch (err) { console.warn('Slack notify failed:', err); }
 }

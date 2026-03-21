@@ -276,7 +276,7 @@ export async function saveAssessmentToDB(playerId, cd) {
             .from('coach_assessments')
             .select('*')
             .eq('player_id', playerId)
-            .single();
+            .maybeSingle();
         if (existing) {
             // Count existing history records to determine version number
             const { count } = await supabase
@@ -312,11 +312,86 @@ export async function saveAssessmentToDB(playerId, cd) {
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
         squad_rec: cd.sqRec || null, updated_at: new Date().toISOString()
     };
-    const { error: upsertErr } = await supabase.from('coach_assessments').upsert(row, { onConflict: 'player_id' });
+    const { data: upsertData, error: upsertErr } = await supabase
+        .from('coach_assessments')
+        .upsert(row, { onConflict: 'player_id' })
+        .select();
     if (upsertErr) {
         console.error('Assessment upsert failed:', upsertErr.message, upsertErr.details);
         throw upsertErr;
     }
+    if (!upsertData || upsertData.length === 0) {
+        console.error('Assessment upsert returned 0 rows — RLS likely blocked the write. uid:', session?.user?.id);
+        throw new Error('Save was blocked by database permissions. Please sign out and sign back in.');
+    }
+}
+
+// ═══ PLAYER-FACING ASSESSMENT LOADER (DNA VIEW) ═══
+// Returns only player-safe fields — NO raw scores, PDI, SAGI, CCM, or domain percentages
+
+export async function loadPlayerDNAData(authUserId) {
+    if (!authUserId) return null;
+
+    // 1. Get the player record
+    const { data: player, error: pErr } = await supabase
+        .from('players')
+        .select('id, name, dob, role, club, association, gender, player_bat_archetype, player_bwl_archetype, bat_arch_secondary, bwl_arch_secondary, bat_arch_answers, bwl_arch_answers, batting_hand, bowling_type, batting_position, batting_phases, bowling_phases, goto_shots, pressure_shot, bowling_variations, bowling_speed, spin_comfort, short_ball_comfort, height_cm')
+        .eq('auth_user_id', authUserId)
+        .eq('submitted', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (pErr || !player) return null;
+
+    // 2. Get coach assessment (player-safe fields only)
+    const { data: assessment } = await supabase
+        .from('coach_assessments')
+        .select('batting_archetype, bowling_archetype, narrative, strengths, priorities, plan_explore, plan_challenge, plan_execute, squad_rec, updated_at')
+        .eq('player_id', player.id)
+        .maybeSingle();
+
+    return {
+        player: {
+            id: player.id,
+            name: player.name,
+            dob: player.dob,
+            role: player.role,
+            club: player.club,
+            association: player.association,
+            gender: player.gender,
+            heightCm: player.height_cm,
+            playerBatArch: player.player_bat_archetype,
+            playerBwlArch: player.player_bwl_archetype,
+            playerBatArchSecondary: player.bat_arch_secondary,
+            playerBwlArchSecondary: player.bwl_arch_secondary,
+            batArchAnswers: player.bat_arch_answers,
+            bwlArchAnswers: player.bwl_arch_answers,
+            bat: player.batting_hand,
+            bowl: player.bowling_type,
+            batPosition: player.batting_position,
+            batPhases: player.batting_phases,
+            bwlPhases: player.bowling_phases,
+            gotoShots: player.goto_shots,
+            pressureShot: player.pressure_shot,
+            bwlVariations: player.bowling_variations,
+            bwlSpeed: player.bowling_speed,
+            spinComfort: player.spin_comfort,
+            shortBallComfort: player.short_ball_comfort,
+        },
+        assessment: assessment ? {
+            coachBatArch: assessment.batting_archetype,
+            coachBwlArch: assessment.bowling_archetype,
+            narrative: assessment.narrative,
+            strengths: assessment.strengths || [],
+            priorities: assessment.priorities || [],
+            planExplore: assessment.plan_explore,
+            planChallenge: assessment.plan_challenge,
+            planExecute: assessment.plan_execute,
+            squadRec: assessment.squad_rec,
+            updatedAt: assessment.updated_at,
+        } : null,
+    };
 }
 
 // ═══ CALIBRATION DATA LOADERS ═══

@@ -15,6 +15,17 @@ const CoachAssessment = React.lazy(() => import("./coach/CoachAssessment"));
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad } from "./data/theme";
 
+const EyeToggle = React.memo(({ show, onToggle }) => (
+    <button type="button" onClick={onToggle} aria-label={show ? 'Hide password' : 'Show password'}
+      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center' }}>
+      {show ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      )}
+    </button>
+));
+
 function MainApp() {
   const { session, authLoading, authStep, setAuthStep, portal, isAdmin, signIn, signUp, signOut, userProfile, joinRole, setJoinRole } = useAuth();
   const { engineLoading } = useEngine();
@@ -117,17 +128,6 @@ function MainApp() {
     fontFamily: F, outline: "none", boxSizing: 'border-box', marginBottom: 8, letterSpacing: 0.5,
   });
 
-  const EyeToggle = ({ show, onToggle }) => (
-    <button type="button" onClick={onToggle} aria-label={show ? 'Hide password' : 'Show password'}
-      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center' }}>
-      {show ? (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
-      ) : (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      )}
-    </button>
-  );
-
   if (!portal) return (
     <div style={{ minHeight: "100vh", ...sGrad, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <img src={LOGO} alt="" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 20, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.3))" }} />
@@ -151,6 +151,11 @@ function MainApp() {
             placeholder="Full Name" autoCapitalize="words" style={inputStyle(authError)} />
           <input type="text" value={regUsername} onChange={e => { setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '')); setAuthError(''); }}
             placeholder="Username" autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
+          {regUsername.length > 0 && (
+            <div style={{ fontSize: 9, color: /^[a-z0-9._]{3,30}$/.test(regUsername) ? '#4ade80' : 'rgba(255,255,255,0.45)', fontFamily: F, marginTop: -4, marginBottom: 6, fontWeight: 600 }}>
+              {regUsername.length < 3 ? `${3 - regUsername.length} more character${3 - regUsername.length > 1 ? 's' : ''} needed` : /^[a-z0-9._]{3,30}$/.test(regUsername) ? '✓ Valid username' : 'Letters, numbers, dots, or underscores only'}
+            </div>
+          )}
           <div style={{ position: 'relative', width: '100%' }}>
             <input type={showRegPw ? 'text' : 'password'} value={regPassword} onChange={e => { setRegPassword(e.target.value); setAuthError(''); }}
               placeholder="Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
@@ -222,7 +227,10 @@ function MainApp() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
             SIGN IN
           </button>
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <div style={{ textAlign: 'center', marginTop: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: F, lineHeight: 1.5 }}>
+            Forgot your password? Contact your RRAM coordinator.
+          </div>
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
             <a href="/login-instructions.html" target="_blank" rel="noopener noreferrer"
               style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: F, textDecoration: 'underline', cursor: 'pointer' }}>
               Login Instructions
