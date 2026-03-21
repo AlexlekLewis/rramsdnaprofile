@@ -187,6 +187,28 @@ export async function updateProgramMember(id, updates) {
 }
 
 // ──────────────────────────────────
+// ADMIN PASSWORD RESET (via Edge Function)
+// ──────────────────────────────────
+export async function resetUserPassword(authUserId, username) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const res = await fetch(`${supabaseUrl}/functions/v1/admin-reset-password`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ auth_user_id: authUserId, username }),
+    });
+
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Password reset failed');
+    return result;
+}
+
+// ──────────────────────────────────
 // USER PROFILES (for admin listing)
 // ──────────────────────────────────
 export async function loadAllUserProfiles() {

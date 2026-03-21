@@ -11,6 +11,7 @@ import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB } from "../db/playerDb";
+import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
 import { generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
@@ -37,6 +38,12 @@ export default function CoachAssessment() {
     const [reportPlayer, setReportPlayer] = useState(null);
     const [showGuide, setShowGuide] = useState(false);
     const saveStatusHook = useSaveStatus();
+
+    // ── Admin accounts panel state ──
+    const [accounts, setAccounts] = useState([]);
+    const [accountsLoading, setAccountsLoading] = useState(false);
+    const [resetResult, setResetResult] = useState(null); // { username, new_password }
+    const [resettingId, setResettingId] = useState(null);
 
     const saveTimer = useRef(null);
     const pendingCdRef = useRef({});
@@ -69,7 +76,10 @@ export default function CoachAssessment() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{session?.user?.email}</div>
             </div>
-            <button onClick={signOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {isAdmin && <button onClick={() => { setAccountsLoading(true); setResetResult(null); loadProgramMembers().then(d => { setAccounts(d); setAccountsLoading(false); }).catch(() => setAccountsLoading(false)); setCView("accounts"); }} style={{ fontSize: 9, fontWeight: 700, color: B.bl, background: `${B.bl}12`, border: `1px solid ${B.bl}30`, borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: F }}>👤 Accounts</button>}
+                <button onClick={signOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+            </div>
         </div>
 
         <div style={{ padding: 12, ...getDkWrap() }}>
@@ -119,6 +129,116 @@ export default function CoachAssessment() {
             <button onClick={signOut} style={backBtn}>← Sign Out</button>
         </div>
     </div>);
+
+    // ═══ ACCOUNTS PANEL (admin only) ═══
+    if (cView === "accounts" && isAdmin) {
+        const handleReset = async (member) => {
+            if (!confirm(`Reset password for ${member.display_name || member.username}? This will generate a new password immediately.`)) return;
+            setResettingId(member.auth_user_id);
+            setResetResult(null);
+            try {
+                const result = await resetUserPassword(member.auth_user_id, member.username);
+                setResetResult({ username: result.username, new_password: result.new_password });
+                // Refresh accounts list to show updated password
+                const updated = await loadProgramMembers();
+                setAccounts(updated);
+            } catch (err) {
+                alert(`Reset failed: ${err.message}`);
+            } finally {
+                setResettingId(null);
+            }
+        };
+
+        const playerAccounts = accounts.filter(a => a.role === 'player');
+        const coachAccounts = accounts.filter(a => a.role === 'coach');
+        const adminAccounts = accounts.filter(a => ['admin', 'super_admin'].includes(a.role));
+
+        const AccountRow = ({ m }) => (
+            <div style={{ ...sCard, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.role === 'player' ? `${B.bl}20` : m.role === 'coach' ? `${B.pk}20` : `${B.prp}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, fontFamily: F }}>
+                        {(m.display_name || m.username || '?').charAt(0).toUpperCase()}
+                    </span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{m.display_name || '—'}</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>
+                            <span style={{ fontWeight: 600, color: B.bl }}>@{m.username}</span>
+                        </div>
+                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>
+                            pw: <span style={{ fontFamily: 'monospace', fontWeight: 600, color: B.nvD, background: B.g100, padding: '1px 4px', borderRadius: 3, fontSize: 10 }}>{m.generated_password || '(self-set)'}</span>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+                        <div style={{ fontSize: 8, fontWeight: 700, color: B.w, background: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', fontFamily: F }}>{m.role}</div>
+                        <div style={{ fontSize: 8, fontWeight: 600, color: m.active ? B.grn : B.red, fontFamily: F }}>{m.active ? '● Active' : '● Inactive'}</div>
+                    </div>
+                </div>
+                <button
+                    disabled={resettingId === m.auth_user_id}
+                    onClick={() => handleReset(m)}
+                    style={{ fontSize: 9, fontWeight: 700, color: B.w, background: resettingId === m.auth_user_id ? B.g400 : B.pk, border: 'none', borderRadius: 6, padding: '6px 12px', cursor: resettingId === m.auth_user_id ? 'default' : 'pointer', fontFamily: F, whiteSpace: 'nowrap', flexShrink: 0 }}
+                >{resettingId === m.auth_user_id ? 'Resetting...' : 'Reset PW'}</button>
+            </div>
+        );
+
+        const SectionLabel = ({ label, count, color }) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 6px' }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color, fontFamily: F, letterSpacing: 1 }}>{label}</div>
+                <div style={{ fontSize: 9, fontWeight: 600, color: B.g400, fontFamily: F }}>({count})</div>
+                <div style={{ flex: 1, height: 1, background: B.g200 }} />
+            </div>
+        );
+
+        return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
+            <Hdr label="ADMIN — ACCOUNTS" onLogoClick={signOut} />
+            <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button onClick={() => setCView("list")} style={{ fontSize: 10, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>← Back to Roster</button>
+                <button onClick={signOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+            </div>
+
+            <div style={{ padding: 12, ...getDkWrap() }}>
+                {/* Reset result banner */}
+                {resetResult && <div style={{ ...sCard, background: `${B.grn}12`, border: `2px solid ${B.grn}40`, marginBottom: 12, padding: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: B.grn, fontFamily: F, marginBottom: 4 }}>✓ Password Reset Successful</div>
+                    <div style={{ fontSize: 10, color: B.nvD, fontFamily: F }}>
+                        Username: <span style={{ fontWeight: 700 }}>@{resetResult.username}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: B.nvD, fontFamily: F, marginTop: 2 }}>
+                        New Password: <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, color: B.pk, background: B.g100, padding: '2px 8px', borderRadius: 4 }}>{resetResult.new_password}</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 6 }}>Give this to the player/coach. They can log in with it immediately.</div>
+                    <button onClick={() => setResetResult(null)} style={{ marginTop: 8, fontSize: 9, fontWeight: 600, color: B.g400, background: 'none', border: `1px solid ${B.g200}`, borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: F }}>Dismiss</button>
+                </div>}
+
+                {accountsLoading && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>Loading accounts...</div>}
+
+                {!accountsLoading && <>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 6 }}>{accounts.length} total accounts</div>
+
+                    {adminAccounts.length > 0 && <>
+                        <SectionLabel label="ADMIN" count={adminAccounts.length} color={B.prp} />
+                        {adminAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                    </>}
+
+                    {coachAccounts.length > 0 && <>
+                        <SectionLabel label="COACHES" count={coachAccounts.length} color={B.pk} />
+                        {coachAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                    </>}
+
+                    {playerAccounts.length > 0 && <>
+                        <SectionLabel label="PLAYERS" count={playerAccounts.length} color={B.bl} />
+                        {playerAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                    </>}
+
+                    {accounts.length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>No accounts found.</div>}
+                </>}
+
+                <button onClick={() => setCView("list")} style={{ ...sCard, textAlign: 'center', cursor: 'pointer', marginTop: 12, fontSize: 11, fontWeight: 600, color: B.bl, fontFamily: F, border: `1px solid ${B.bl}30` }}>← Back to Player Roster</button>
+            </div>
+        </div>);
+    }
 
     // ═══ SURVEY VIEW ═══
     if (cView === "survey" && sp) {
