@@ -8,7 +8,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "npx playwright test",
+    "test:e2e:smoke": "npx playwright test e2e/00-smoke.spec.js",
+    "test:e2e:auth": "npx playwright test e2e/01-auth.spec.js",
+    "test:e2e:coach": "npx playwright test e2e/02-coach-portal.spec.js",
+    "test:e2e:headed": "npx playwright test --headed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
@@ -19,6 +24,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.0",
     "vitest": "^4.0.18"

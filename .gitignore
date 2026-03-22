@@ -16,3 +16,8 @@ Royals.Art.png
 
 # OAuth secrets
 client_secret_*.json
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
