@@ -6,7 +6,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { collectConsoleErrors, assertNoFatalErrors, waitForAppReady } from './helpers/auth.js';
-import { SEL, LOAD_TIMEOUT, BASE_URL } from './helpers/constants.js';
+import { SEL, LOAD_TIMEOUT } from './helpers/constants.js';
 
 test.describe('Smoke Tests — App Loads', () => {
 
