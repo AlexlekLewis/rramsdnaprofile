@@ -141,7 +141,7 @@ export function AuthProvider({ children }) {
     const signOut = async () => {
         try {
             ['rra_pStep', 'rra_selP', 'rra_cView', 'rra_cPage'].forEach(k => sessionStorage.removeItem(k));
-            ['rra_pStep', 'rra_pd', 'rra_obGuide'].forEach(k => localStorage.removeItem(k));
+            ['rra_pStep', 'rra_pd', 'rra_obGuide', 'rra_user_role', 'rra_pending_role'].forEach(k => localStorage.removeItem(k));
             await authSignOut();
         } catch (e) {
             console.error('Sign-out error:', e);

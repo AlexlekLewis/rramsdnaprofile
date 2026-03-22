@@ -167,25 +167,36 @@ export function onAuthStateChange(callback) {
 export async function upsertUserProfile(user) {
     let role = localStorage.getItem('rra_pending_role');
 
+    // Check for existing profile first — preserves submitted flag and role
+    const { data: existing } = await supabase
+        .from('user_profiles')
+        .select('role, submitted')
+        .eq('id', user.id)
+        .maybeSingle();
+
     if (!role) {
-        const { data: existing } = await supabase
-            .from('user_profiles')
-            .select('role')
-            .eq('id', user.id)
-            .maybeSingle();
         role = existing?.role || 'player';
+    }
+
+    const upsertPayload = {
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
+        avatar_url: user.user_metadata?.avatar_url || '',
+        role,
+        updated_at: new Date().toISOString(),
+    };
+
+    // CRITICAL: Preserve submitted flag for returning players
+    // Only include submitted in upsert if profile already exists with submitted=true
+    // Otherwise let the database default (false) apply for new users
+    if (existing?.submitted) {
+        upsertPayload.submitted = true;
     }
 
     const { data, error } = await supabase
         .from('user_profiles')
-        .upsert({
-            id: user.id,
-            email: user.email,
-            full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-            avatar_url: user.user_metadata?.avatar_url || '',
-            role,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' })
+        .upsert(upsertPayload, { onConflict: 'id' })
         .select()
         .single();
 
