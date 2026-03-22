@@ -77,12 +77,6 @@ export function assertNoFatalErrors(errors) {
   return errors.filter(e =>
     !e.includes('favicon') && !e.includes('realtime') && !e.includes('net::ERR_') &&
     !e.includes('ResizeObserver') && !e.includes('Slack notify') && !e.includes('Failed to fetch') &&
-    !e.includes('Failed to load resource') &&  // Supabase 400s from dev bypass (fake user ID)
-    !e.includes('program_members.program_id')   // Known bug: journal queries non-existent column
+    !e.includes('Failed to load resource')   // Supabase 400s from dev bypass (fake user ID)
   );
 }
-
-/** Known bugs discovered by E2E tests — check if they're still present. */
-export const KNOWN_BUGS = [
-  'column program_members.program_id does not exist (Journal view query)',
-];

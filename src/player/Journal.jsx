@@ -97,6 +97,7 @@ export default function Journal({ session, userProfile }) {
         try {
             const entry = {
                 session_id: selectedSessId,
+                program_id: activeSess.program_id,
                 answers: questions.map(q => ({ q, a: answers[q] || '' })),
                 mood: mood,
             };
