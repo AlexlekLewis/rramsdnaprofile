@@ -87,7 +87,20 @@ function MainApp() {
     }
     setAuthError('');
     try {
-      await signUp(regUsername, regPassword, regName, joinRole || 'player', regCode.trim());
+      // Try with selected role first, then try the other role if it fails
+      const primaryRole = joinRole || 'player';
+      const fallbackRole = primaryRole === 'player' ? 'coach' : 'player';
+      try {
+        await signUp(regUsername, regPassword, regName, primaryRole, regCode.trim());
+      } catch (primaryErr) {
+        // If the code doesn't match the role, try the other role
+        if (primaryErr.message?.includes('not valid for')) {
+          setJoinRole(fallbackRole);
+          await signUp(regUsername, regPassword, regName, fallbackRole, regCode.trim());
+        } else {
+          throw primaryErr;
+        }
+      }
     } catch (e) {
       const msg = e.message || '';
       if (msg.toLowerCase().includes('weak') || msg.toLowerCase().includes('easy to guess') || msg.toLowerCase().includes('pwned')) {
@@ -236,10 +249,14 @@ function MainApp() {
               Login Instructions
             </a>
           </div>
-          <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <div style={{ textAlign: 'center', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
             <span onClick={() => switchToRegister('player')}
               style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
               New player? Register here
+            </span>
+            <span onClick={() => switchToRegister('coach')}
+              style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
+              Coach registration
             </span>
           </div>
         </div>

@@ -7,4 +7,7 @@ export default defineConfig({
     // reportGenerator chunk (html2canvas + jsPDF) is ~594kB but lazy-loaded only on PDF generation
     chunkSizeWarningLimit: 600,
   },
+  test: {
+    exclude: ['e2e/**', 'node_modules/**'],
+  },
 });

@@ -273,6 +273,8 @@ export default function PlayerOnboarding() {
     const dobInvalid = pd.dob && !isValidDob(pd.dob);
 
     // ── Step validation ──
+    const countSelfRatings = (prefix) => Object.keys(pd).filter(k => k.startsWith(prefix) && pd[k] > 0).length;
+
     const validateStep = (step) => {
         if (step === 0) {
             if (!pd.name?.trim()) return 'Please enter your full name';
@@ -285,6 +287,17 @@ export default function PlayerOnboarding() {
         if (step === 2) {
             if (!pd.role) return 'Please select your primary role';
             if (!pd.primarySkill) return 'Please select your primary skill';
+        }
+        if (step === 3) {
+            // Self-assessment: require at least 3 confidence + 3 frequency ratings
+            const confCount = countSelfRatings('sr_c_');
+            const freqCount = countSelfRatings('sr_f_');
+            if (confCount < 3 || freqCount < 3) return 'Please rate at least a few skills before continuing — this helps your coaches understand you';
+        }
+        if (step === 4) {
+            // Player voice / matchups: require at least 2 matchup ratings
+            const mcCount = countSelfRatings('sr_mc_');
+            if (mcCount < 2) return 'Please answer at least a couple of match-up questions before continuing';
         }
         return null;
     };
@@ -667,9 +680,9 @@ export default function PlayerOnboarding() {
 
         <Hdr label="PLAYER ONBOARDING" onLogoClick={handleSignOut} />
         {/* Sign-out bar */}
-        <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 10 }}>
             <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{session?.user?.email}</div>
-            <button onClick={handleSignOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Sign Out</button>
+            <button onClick={handleSignOut} style={{ fontSize: 9, fontWeight: 600, color: B.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, padding: '6px 8px', minHeight: 32, minWidth: 44 }}>Sign Out</button>
         </div>
 
         {/* ═══ PROFILE UPDATE BANNER (v1 → v2) ═══ */}
