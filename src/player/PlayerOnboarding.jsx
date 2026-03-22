@@ -288,16 +288,21 @@ export default function PlayerOnboarding() {
             if (!pd.role) return 'Please select your primary role';
             if (!pd.primarySkill) return 'Please select your primary skill';
         }
-        if (step === 3) {
-            // Self-assessment: require at least 3 confidence + 3 frequency ratings
+        // Steps 3-4: soft nudge — show message once, then allow skip on second tap
+        if (step === 3 && !pd._nudge3) {
             const confCount = countSelfRatings('sr_c_');
             const freqCount = countSelfRatings('sr_f_');
-            if (confCount < 3 || freqCount < 3) return 'Please rate at least a few skills before continuing — this helps your coaches understand you';
+            if (confCount < 3 || freqCount < 3) {
+                pu('_nudge3', true);
+                return 'Rate a few skills to help your coaches — or tap Next again to skip';
+            }
         }
-        if (step === 4) {
-            // Player voice / matchups: require at least 2 matchup ratings
+        if (step === 4 && !pd._nudge4) {
             const mcCount = countSelfRatings('sr_mc_');
-            if (mcCount < 2) return 'Please answer at least a couple of match-up questions before continuing';
+            if (mcCount < 2) {
+                pu('_nudge4', true);
+                return 'Answer a couple of match-up questions — or tap Next again to skip';
+            }
         }
         return null;
     };
