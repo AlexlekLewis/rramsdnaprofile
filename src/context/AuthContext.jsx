@@ -16,7 +16,7 @@ const AuthContext = createContext();
 const DEV_MODE = import.meta.env.DEV && typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const DEV_ROLE_PARAM = DEV_MODE && new URLSearchParams(window.location.search).get('devRole');
 
-// ── Join link detection: ?join=player or ?join=coach ──
+// ── Join link detection (legacy support — role is now auto-detected from code) ──
 const JOIN_PARAM = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('join')
     : null;

@@ -152,7 +152,7 @@ function MainApp() {
       {showRegister && (authStep === 'register' || authStep === 'login') && <>
         <div style={{ width: "100%", maxWidth: 300 }}>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontFamily: F, marginBottom: 16, lineHeight: 1.4, textAlign: 'center' }}>
-            Create your {joinRole || 'player'} account
+            Create your account
           </div>
           <input type="text" value={regCode} onChange={e => { setRegCode(e.target.value.toUpperCase().replace(/[^A-Z0-9\-]/g, '')); setAuthError(''); }}
             placeholder="Registration Code" autoFocus autoCapitalize="characters" autoCorrect="off"
@@ -249,14 +249,10 @@ function MainApp() {
               Login Instructions
             </a>
           </div>
-          <div style={{ textAlign: 'center', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-            <span onClick={() => switchToRegister('player')}
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <span onClick={() => switchToRegister(null)}
               style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
-              New player? Register here
-            </span>
-            <span onClick={() => switchToRegister('coach')}
-              style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
-              Coach registration
+              New here? Register with your code
             </span>
           </div>
         </div>
