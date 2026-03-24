@@ -15,51 +15,41 @@ export default function SquadAssignment() {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
-    // Load cohort data from all sources
+    // Load players who have actually signed up (players table is source of truth)
     useEffect(() => {
         async function loadCohort() {
             setLoading(true);
             try {
-                const [{ data: oc }, { data: players }, { data: apps }] = await Promise.all([
-                    supabase.from('official_cohort_2026').select('*').order('player_name'),
-                    supabase.from('players').select('id, name, dob, role, bowling_type, club, gender, self_ratings').eq('submitted', true),
-                    supabase.from('applications').select('first_name, last_name, email, suburb, history, bio, age, dob'),
+                const [{ data: players }, { data: cohortData }] = await Promise.all([
+                    supabase.from('players').select('id, name, dob, role, bowling_type, club, gender, self_ratings').eq('submitted', true).order('name'),
+                    supabase.from('official_cohort_2026').select('*'),
                 ]);
 
-                // Deduplicate cohort by player_name — keep the row with most data
-                const deduped = {};
-                (oc || []).filter(c => c.player_name && c.player_name.length > 3).forEach(c => {
-                    const key = c.player_name.toLowerCase().trim();
-                    if (!deduped[key]) { deduped[key] = c; return; }
-                    // Keep the row with more data (prefer one with dob, selected_sessions, age)
-                    const existing = deduped[key];
-                    const existingScore = (existing.dob ? 1 : 0) + (existing.selected_sessions ? 1 : 0) + (existing.age ? 1 : 0) + (existing.club ? 1 : 0);
-                    const newScore = (c.dob ? 1 : 0) + (c.selected_sessions ? 1 : 0) + (c.age ? 1 : 0) + (c.club ? 1 : 0);
-                    if (newScore > existingScore) deduped[key] = c;
+                // Build cohort lookup for enrichment
+                const cohortByName = {};
+                (cohortData || []).forEach(c => {
+                    if (c.player_name) cohortByName[c.player_name.toLowerCase().trim()] = c;
                 });
-                const uniqueCohort = Object.values(deduped);
 
-                // Merge cohort with DNA player data and application data
-                const merged = uniqueCohort.map(c => {
-                    const dna = (players || []).find(p => p.name?.toLowerCase().trim() === c.player_name?.toLowerCase().trim());
-                    const app = (apps || []).find(a => a.email && c.email && a.email.toLowerCase() === c.email.toLowerCase());
-
+                // Primary source: submitted DNA players, enriched with cohort data
+                const merged = (players || []).map(p => {
+                    const c = cohortByName[p.name?.toLowerCase().trim()] || {};
                     return {
-                        id: c.id,
-                        name: c.player_name,
-                        dob: c.dob || app?.dob || dna?.dob,
-                        age: c.age || app?.age,
-                        gender: c.gender,
+                        id: c.id || p.id,
+                        name: p.name,
+                        dob: p.dob || c.dob,
+                        age: c.age,
+                        gender: p.gender || c.gender,
                         suburb: c.suburb,
-                        club: c.club || dna?.club,
-                        role: dna?.role || c.player_role,
+                        club: p.club || c.club,
+                        role: p.role || c.player_role,
                         playerRole: c.player_role,
-                        bowlingType: dna?.bowling_type,
+                        bowlingType: p.bowling_type,
                         selectedSessions: c.selected_sessions,
-                        ccm: 0, // Will be calculated or loaded
-                        history: c.history || app?.history,
-                        bio: c.bio || app?.bio,
-                        dnaId: dna?.id,
+                        ccm: 0,
+                        history: c.history,
+                        bio: c.bio,
+                        dnaId: p.id,
                     };
                 });
 
