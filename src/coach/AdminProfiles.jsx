@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { B, F, sCard, getDkWrap } from "../data/theme";
 import { ROLES } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
-import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, updateCohortPlayer } from "../db/adminDb";
+import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortPlayer, updateCohortPlayer } from "../db/adminDb";
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
@@ -214,13 +214,14 @@ export default function AdminProfiles() {
     };
 
     const requestDelete = (profile) => {
-        if (!profile.dnaId) return;
+        if (!profile.dnaId && !profile.cohortId) return;
         setConfirmAction({
             type: 'delete', names: [profile.name],
             onConfirm: async () => {
                 setConfirmAction(null);
                 try {
-                    await deletePlayer(profile.dnaId);
+                    if (profile.dnaId) await deletePlayer(profile.dnaId);
+                    if (profile.cohortId) await deleteCohortPlayer(profile.cohortId);
                     showFeedback('ok', `${profile.name} deleted`);
                     setEditingId(null);
                     setExpandedId(null);
@@ -352,12 +353,10 @@ export default function AdminProfiles() {
                                                         Archive Player
                                                     </button>
                                                 )}
-                                                {p.dnaId && (
-                                                    <button onClick={() => requestDelete(p)}
-                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
-                                                        Delete Player
-                                                    </button>
-                                                )}
+                                                <button onClick={() => requestDelete(p)}
+                                                    style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                    Delete Player
+                                                </button>
                                             </div>
                                         </div>
                                     ) : (
@@ -425,12 +424,10 @@ export default function AdminProfiles() {
                                                         Restore
                                                     </button>
                                                 )}
-                                                {p.dnaId && (
-                                                    <button onClick={() => requestDelete(p)}
-                                                        style={{ padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
-                                                        Delete
-                                                    </button>
-                                                )}
+                                                <button onClick={() => requestDelete(p)}
+                                                    style={{ padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                    Delete
+                                                </button>
                                             </div>
                                         </div>
                                     )}

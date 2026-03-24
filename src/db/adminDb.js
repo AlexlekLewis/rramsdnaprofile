@@ -332,6 +332,11 @@ export async function bulkDeletePlayers(playerIds) {
     }
 }
 
+export async function deleteCohortPlayer(cohortId) {
+    const { error } = await supabase.from('official_cohort_2026').delete().eq('id', cohortId);
+    if (error) throw error;
+}
+
 export async function updateCohortPlayer(cohortId, updates) {
     const { data, error } = await supabase
         .from('official_cohort_2026')
