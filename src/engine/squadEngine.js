@@ -169,11 +169,49 @@ function squadAvgCCM(squad) {
     return ccms.length > 0 ? ccms.reduce((a, b) => a + b, 0) / ccms.length : 0;
 }
 
+// ── Rule 8: Sibling detection (shared parent email → same time slot) ──
+
+function detectSiblingGroups(players) {
+    // Group players by parent email to find siblings
+    const byParent = {};
+    players.forEach(p => {
+        const emails = [p.parent1Email, p.parent2Email].filter(e => e && e.trim().length > 3);
+        emails.forEach(email => {
+            const key = email.toLowerCase().trim();
+            if (!byParent[key]) byParent[key] = [];
+            // Avoid adding the same player twice (from parent1 + parent2 matching)
+            if (!byParent[key].some(s => s.id === p.id || s.dnaId === p.dnaId)) {
+                byParent[key].push(p);
+            }
+        });
+    });
+    // Only keep groups with 2+ distinct players (actual siblings)
+    return Object.values(byParent).filter(group => group.length > 1);
+}
+
+function getSiblingTimeSlot(player, siblingGroups, placedPlayers) {
+    // Find which sibling group this player belongs to
+    for (const group of siblingGroups) {
+        const isSibling = group.some(s => (s.id === player.id) || (s.dnaId === player.dnaId));
+        if (!isSibling) continue;
+        // Check if any sibling has already been placed
+        for (const sib of group) {
+            if ((sib.id === player.id) || (sib.dnaId === player.dnaId)) continue;
+            const placed = placedPlayers.get(sib.id || sib.dnaId);
+            if (placed) return placed.weekday; // Must match this time slot
+        }
+    }
+    return null; // No sibling constraint
+}
+
 // ═══ MAIN ALLOCATION ENGINE ═══
 
 export function autoAssignSquads(players, sessionConfig) {
     // Default session config if not provided
     const config = sessionConfig || generateSessionConfig(players.length);
+
+    // Rule 8: Detect sibling groups before allocation
+    const siblingGroups = detectSiblingGroups(players);
 
     // Rule 1: Gender separation
     const pools = { male: [], female: [] };
@@ -188,7 +226,8 @@ export function autoAssignSquads(players, sessionConfig) {
         });
     });
 
-    const result = { squads: [], overflow: [], overrides: [], dataQuality: [] };
+    const result = { squads: [], overflow: [], overrides: [], dataQuality: [], siblingGroups: [] };
+    const placedPlayers = new Map(); // track id → squad for sibling lookups
 
     // Run engine on each pool
     Object.entries(pools).forEach(([gender, pool]) => {
@@ -219,6 +258,9 @@ export function autoAssignSquads(players, sessionConfig) {
         pool.forEach(player => {
             const normCCM = maxCCM > 0 ? (player.ccm / maxCCM) : 0;
 
+            // Rule 8: Sibling constraint — must match sibling's time slot
+            const requiredSlot = getSiblingTimeSlot(player, siblingGroups, placedPlayers);
+
             // Score each squad
             let bestSquad = null;
             let bestScore = -Infinity;
@@ -227,6 +269,9 @@ export function autoAssignSquads(players, sessionConfig) {
             for (const squad of squads) {
                 // Rule 4: Gate A — capacity
                 if (squad.players.length >= MAX_SQUAD_SIZE) continue;
+
+                // Rule 8: Gate — sibling time slot (hard constraint)
+                if (requiredSlot && squad.weekday !== requiredSlot) continue;
 
                 // Rule 5: Gate B — age banding (skip if player has no age data)
                 let ageBlocked = false;
@@ -258,11 +303,15 @@ export function autoAssignSquads(players, sessionConfig) {
 
             if (bestSquad) {
                 bestSquad.players.push(player);
+                placedPlayers.set(player.id || player.dnaId, { weekday: bestSquad.weekday, squad: bestSquad.name });
                 if (override) {
                     result.overrides.push({ player: player.name, squad: bestSquad.name, ccm: player.ccm, reason: 'CCM override — placed up despite age gap' });
                 }
+                if (requiredSlot) {
+                    result.siblingGroups.push({ player: player.name, squad: bestSquad.name, slot: requiredSlot, reason: 'Sibling time slot constraint' });
+                }
             } else {
-                result.overflow.push({ ...player, reason: player.age == null ? 'No age data' : 'No valid squad (age banding / capacity)' });
+                result.overflow.push({ ...player, reason: requiredSlot ? `No valid squad at sibling time slot (${requiredSlot})` : (player.age == null ? 'No age data' : 'No valid squad (age banding / capacity)') });
             }
 
             // Data quality flags
@@ -273,6 +322,14 @@ export function autoAssignSquads(players, sessionConfig) {
 
         result.squads.push(...squads);
     });
+
+    // Log sibling groups detected for transparency
+    if (siblingGroups.length > 0) {
+        result.siblingGroups.unshift(...siblingGroups.map(g => ({
+            players: g.map(p => p.name).join(' & '),
+            reason: 'Detected via shared parent email',
+        })));
+    }
 
     return result;
 }

@@ -50,6 +50,8 @@ export default function SquadAssignment() {
                         history: c.history,
                         bio: c.bio,
                         dnaId: p.id,
+                        parent1Email: c.parent1_email || null,
+                        parent2Email: c.parent2_email || null,
                     };
                 });
 
