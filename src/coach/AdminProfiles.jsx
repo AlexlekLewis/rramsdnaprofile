@@ -179,7 +179,10 @@ export default function AdminProfiles() {
     };
 
     const handleDelete = async (profile) => {
-        if (!profile.dnaId && !profile.cohortId) return;
+        if (!profile.dnaId && !profile.cohortId) {
+            showFeedback('err', `${profile.name} has no deletable record`);
+            return;
+        }
         if (!window.confirm(`Permanently delete ${profile.name} and all their data? This cannot be undone.`)) return;
         try {
             if (profile.dnaId) await deletePlayer(profile.dnaId);
@@ -392,10 +395,8 @@ export default function AdminProfiles() {
                                         <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
                                             style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.grn}`, background: `${B.grn}10`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
                                     )}
-                                    {(p.dnaId || p.cohortId) && (
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
-                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
-                                    )}
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                        style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
                                 </div>
                                 <div onClick={() => setExpandedId(isExpanded ? null : p.id)}
                                     style={{ fontSize: 10, color: B.g400, cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</div>
@@ -443,12 +444,18 @@ export default function AdminProfiles() {
                                                     style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, background: B.w, color: B.g600, fontSize: 11, fontFamily: F, cursor: 'pointer' }}>
                                                     Cancel
                                                 </button>
-                                                {p.dnaId && (
-                                                    <button onClick={() => handleDelete(p)}
-                                                        style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
-                                                        Delete
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${B.g100}` }}>
+                                                {tab === 'active' && p.dnaId && (
+                                                    <button onClick={() => handleArchive(p)}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1.5px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Archive Player
                                                     </button>
                                                 )}
+                                                <button onClick={() => handleDelete(p)}
+                                                    style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1.5px solid ${B.red}`, background: `${B.red}10`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                    Delete Player
+                                                </button>
                                             </div>
                                         </div>
                                     ) : (
