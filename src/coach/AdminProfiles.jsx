@@ -1,9 +1,9 @@
 // ═══ ADMIN PLAYER PROFILES — Unified directory with full management ═══
 import React, { useState, useEffect, useCallback } from "react";
 import { B, F, sCard, getDkWrap } from "../data/theme";
-import { ROLES } from "../data/skillItems";
+import { ROLES, VOICE_QS } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
-import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, bulkArchivePlayers, bulkDeletePlayers, updateCohortPlayer } from "../db/adminDb";
+import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, bulkArchivePlayers, bulkDeletePlayers, updateCohortPlayer, deleteCohortPlayer, bulkDeleteCohortPlayers } from "../db/adminDb";
 
 const TABS = [
     { id: 'active', label: 'Active' },
@@ -35,7 +35,7 @@ export default function AdminProfiles() {
                 supabase.from('official_cohort_2026').select('*').order('player_name'),
                 supabase.from('applications').select('*').order('first_name'),
                 supabase.from('players').select('*').eq('submitted', true),
-                supabase.from('coach_assessments').select('player_id, narrative, strengths, priorities, updated_at'),
+                supabase.from('coach_assessments').select('player_id, narrative, strengths, priorities, batting_archetype, bowling_archetype, squad_rec, plan_explore, plan_challenge, plan_execute, tech_primary, tech_secondary, game_iq, mental, physical, phase_ratings, updated_at'),
                 supabase.from('players').select('*').eq('submitted', false),
             ]);
 
@@ -75,9 +75,29 @@ export default function AdminProfiles() {
                     batHand: dna?.batting_hand, bowlType: dna?.bowling_type,
                     dnaArchBat: dna?.player_bat_archetype, dnaArchBwl: dna?.player_bwl_archetype,
                     injury: dna?.injury, heightCm: dna?.height_cm,
+                    // DNA profile fields
+                    selfRatings: dna?.self_ratings || null,
+                    voiceAnswers: dna?.voice_answers || null,
+                    dnaGoals: dna?.goals || null,
+                    batPosition: dna?.batting_position, batPhases: dna?.batting_phases,
+                    bwlPhases: dna?.bowling_phases, bwlSpeed: dna?.bowling_speed,
+                    gotoShots: dna?.goto_shots, pressureShot: dna?.pressure_shot,
+                    bwlVariations: dna?.bowling_variations,
+                    spinComfort: dna?.spin_comfort, shortBallComfort: dna?.short_ball_comfort,
+                    // Coach assessment details
                     hasAssessment: !!assessment, narrative: assessment?.narrative,
+                    assessmentStrengths: assessment?.strengths || null,
+                    assessmentPriorities: assessment?.priorities || null,
+                    coachBatArch: assessment?.batting_archetype, coachBwlArch: assessment?.bowling_archetype,
+                    squadRec: assessment?.squad_rec,
+                    planExplore: assessment?.plan_explore, planChallenge: assessment?.plan_challenge, planExecute: assessment?.plan_execute,
+                    techPrimary: assessment?.tech_primary || null, techSecondary: assessment?.tech_secondary || null,
+                    gameIq: assessment?.game_iq || null, mentalScores: assessment?.mental || null,
+                    physicalScores: assessment?.physical || null, phaseRatings: assessment?.phase_ratings || null,
+                    assessmentDate: assessment?.updated_at,
                     isArchived: dna ? !dna.submitted : false,
                     source_table: source,
+                    createdAt: dna?.created_at || c.created_at,
                 };
             };
 
@@ -143,6 +163,8 @@ export default function AdminProfiles() {
                 showFeedback('ok', `${profile.name} archived`);
                 loadData();
             } catch (err) { showFeedback('err', 'Archive failed'); }
+        } else {
+            showFeedback('err', `${profile.name} has no DNA profile to archive`);
         }
     };
 
@@ -157,10 +179,11 @@ export default function AdminProfiles() {
     };
 
     const handleDelete = async (profile) => {
-        if (!profile.dnaId) return;
+        if (!profile.dnaId && !profile.cohortId) return;
         if (!window.confirm(`Permanently delete ${profile.name} and all their data? This cannot be undone.`)) return;
         try {
-            await deletePlayer(profile.dnaId);
+            if (profile.dnaId) await deletePlayer(profile.dnaId);
+            if (profile.cohortId) await deleteCohortPlayer(profile.cohortId);
             showFeedback('ok', `${profile.name} deleted`);
             loadData();
         } catch (err) { showFeedback('err', 'Delete failed'); }
@@ -181,8 +204,9 @@ export default function AdminProfiles() {
     };
 
     const handleBulkArchive = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive'); return; }
+        const selected = filtered.filter(p => selectedIds.has(p.id));
+        const dnaIds = selected.filter(p => p.dnaId).map(p => p.dnaId);
+        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive in selection'); return; }
         try {
             await bulkArchivePlayers(dnaIds);
             showFeedback('ok', `${dnaIds.length} players archived`);
@@ -192,15 +216,63 @@ export default function AdminProfiles() {
     };
 
     const handleBulkDelete = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to delete'); return; }
-        if (!window.confirm(`Permanently delete ${dnaIds.length} players? This cannot be undone.`)) return;
+        const selected = filtered.filter(p => selectedIds.has(p.id));
+        const dnaIds = selected.filter(p => p.dnaId).map(p => p.dnaId);
+        const cohortOnlyIds = selected.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+        const total = dnaIds.length + cohortOnlyIds.length;
+        if (total === 0) { showFeedback('err', 'No profiles to delete'); return; }
+        if (!window.confirm(`Permanently delete ${total} players? This cannot be undone.`)) return;
         try {
-            await bulkDeletePlayers(dnaIds);
-            showFeedback('ok', `${dnaIds.length} players deleted`);
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${total} players deleted`);
             setSelectedIds(new Set());
             loadData();
         } catch (err) { showFeedback('err', 'Bulk delete failed'); }
+    };
+
+    const handleArchiveAll = async () => {
+        const dnaIds = filtered.filter(p => p.dnaId).map(p => p.dnaId);
+        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive'); return; }
+        if (!window.confirm(`Archive all ${dnaIds.length} visible players? They can be restored later.`)) return;
+        try {
+            await bulkArchivePlayers(dnaIds);
+            showFeedback('ok', `${dnaIds.length} players archived`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Archive all failed'); }
+    };
+
+    const handleDeleteAll = async () => {
+        const dnaIds = filtered.filter(p => p.dnaId).map(p => p.dnaId);
+        const cohortOnlyIds = filtered.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+        const total = dnaIds.length + cohortOnlyIds.length;
+        if (total === 0) { showFeedback('err', 'No profiles to delete'); return; }
+        if (!window.confirm(`⚠️ PERMANENTLY DELETE ALL ${total} visible players? This cannot be undone!`)) return;
+        if (!window.confirm(`Are you absolutely sure? This will delete ${total} players and ALL their data permanently.`)) return;
+        try {
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${total} players deleted`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Delete all failed'); }
+    };
+
+    const handleDeleteOld = async () => {
+        const yesterday = new Date(Date.now() - 86400000).toISOString();
+        const old = filtered.filter(p => p.createdAt && p.createdAt < yesterday);
+        if (old.length === 0) { showFeedback('err', 'No players created before yesterday'); return; }
+        if (!window.confirm(`Permanently delete ${old.length} players created before yesterday? This cannot be undone.`)) return;
+        try {
+            const dnaIds = old.filter(p => p.dnaId).map(p => p.dnaId);
+            const cohortOnlyIds = old.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${old.length} old players deleted`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Delete old failed'); }
     };
 
     // ── Render ──
@@ -249,6 +321,20 @@ export default function AdminProfiles() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, suburb, club..."
                     style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none' }} />
+                {tab === 'active' && (
+                    <button onClick={handleArchiveAll}
+                        style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                        Archive All
+                    </button>
+                )}
+                <button onClick={handleDeleteOld}
+                    style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.org}`, background: `${B.org}10`, color: B.org, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                    Delete Old
+                </button>
+                <button onClick={handleDeleteAll}
+                    style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                    Delete All
+                </button>
             </div>
 
             {/* Bulk action bar */}
@@ -295,16 +381,20 @@ export default function AdminProfiles() {
                                     </div>
                                 </div>
                                 {/* Quick action buttons */}
-                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                                     <button onClick={(e) => { e.stopPropagation(); handleEdit(p); setExpandedId(p.id); }}
-                                        style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.bl}30`, background: `${B.bl}08`, color: B.bl, cursor: 'pointer', fontFamily: F }}>Edit</button>
+                                        style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.bl}`, background: `${B.bl}10`, color: B.bl, cursor: 'pointer', fontFamily: F }}>Edit</button>
                                     {tab === 'active' && p.dnaId && (
                                         <button onClick={(e) => { e.stopPropagation(); handleArchive(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.amb}30`, background: `${B.amb}08`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
                                     )}
                                     {tab === 'archived' && (
                                         <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.grn}30`, background: `${B.grn}08`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.grn}`, background: `${B.grn}10`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
+                                    )}
+                                    {(p.dnaId || p.cohortId) && (
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
                                     )}
                                 </div>
                                 <div onClick={() => setExpandedId(isExpanded ? null : p.id)}
@@ -381,6 +471,99 @@ export default function AdminProfiles() {
                                             <InfoRow label="Height" value={p.heightCm ? `${p.heightCm}cm` : null} />
                                             {p.history && <InfoRow label="History" value={p.history.length > 200 ? p.history.substring(0, 200) + '...' : p.history} />}
                                             {p.injury && <InfoRow label="Medical" value={p.injury} />}
+
+                                            {/* ── DNA PROFILE ── */}
+                                            {p.hasDNA && (
+                                                <>
+                                                    <div style={{ fontSize: 10, fontWeight: 800, color: B.grn, fontFamily: F, marginTop: 12, marginBottom: 6 }}>DNA PROFILE</div>
+                                                    <InfoRow label="Bat Position" value={p.batPosition} />
+                                                    <InfoRow label="Bat Phases" value={Array.isArray(p.batPhases) ? p.batPhases.join(', ') : p.batPhases} />
+                                                    <InfoRow label="Bowl Phases" value={Array.isArray(p.bwlPhases) ? p.bwlPhases.join(', ') : p.bwlPhases} />
+                                                    <InfoRow label="Bowl Speed" value={p.bwlSpeed} />
+                                                    <InfoRow label="Go-To Shots" value={Array.isArray(p.gotoShots) ? p.gotoShots.join(', ') : p.gotoShots} />
+                                                    <InfoRow label="Pressure Shot" value={p.pressureShot} />
+                                                    <InfoRow label="Variations" value={Array.isArray(p.bwlVariations) ? p.bwlVariations.join(', ') : p.bwlVariations} />
+                                                    <InfoRow label="Spin Comfort" value={p.spinComfort} />
+                                                    <InfoRow label="Short Ball" value={p.shortBallComfort} />
+                                                    {p.dnaGoals && <InfoRow label="Goals" value={p.dnaGoals} />}
+
+                                                    {/* Self-Ratings */}
+                                                    {p.selfRatings && Object.keys(p.selfRatings).length > 0 && (
+                                                        <>
+                                                            <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, marginTop: 8, marginBottom: 4 }}>SELF-RATINGS</div>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                                {Object.entries(p.selfRatings).map(([key, val]) => (
+                                                                    <span key={key} style={{ padding: '2px 6px', borderRadius: 4, background: `${B.bl}08`, border: `1px solid ${B.bl}20`, fontSize: 9, fontFamily: F, color: B.nvD }}>
+                                                                        {key.replace(/_/g, ' ')}: <strong>{val}</strong>
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </>
+                                                    )}
+
+                                                    {/* Voice Answers */}
+                                                    {p.voiceAnswers && p.voiceAnswers.some(v => v) && (
+                                                        <>
+                                                            <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, marginTop: 8, marginBottom: 4 }}>PLAYER VOICE</div>
+                                                            {p.voiceAnswers.map((ans, i) => ans ? (
+                                                                <div key={i} style={{ marginBottom: 6 }}>
+                                                                    <div style={{ fontSize: 9, fontWeight: 700, color: B.g500, fontFamily: F }}>{VOICE_QS[i] || `Q${i + 1}`}</div>
+                                                                    <div style={{ fontSize: 11, color: B.nvD, fontFamily: F, fontStyle: 'italic', paddingLeft: 8 }}>{ans}</div>
+                                                                </div>
+                                                            ) : null)}
+                                                        </>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {/* ── COACH ASSESSMENT ── */}
+                                            {p.hasAssessment && (
+                                                <>
+                                                    <div style={{ fontSize: 10, fontWeight: 800, color: B.pk, fontFamily: F, marginTop: 12, marginBottom: 6 }}>COACH ASSESSMENT</div>
+                                                    <InfoRow label="Assessed" value={p.assessmentDate ? new Date(p.assessmentDate).toLocaleDateString() : null} />
+                                                    <InfoRow label="Coach Bat Arch" value={p.coachBatArch} />
+                                                    <InfoRow label="Coach Bwl Arch" value={p.coachBwlArch} />
+                                                    <InfoRow label="Squad Rec" value={p.squadRec} />
+                                                    {p.narrative && <InfoRow label="Narrative" value={p.narrative} />}
+                                                    {p.assessmentStrengths && p.assessmentStrengths.length > 0 && (
+                                                        <InfoRow label="Strengths" value={p.assessmentStrengths.join(' · ')} />
+                                                    )}
+                                                    {p.assessmentPriorities && p.assessmentPriorities.length > 0 && (
+                                                        <InfoRow label="Priorities" value={p.assessmentPriorities.join(' · ')} />
+                                                    )}
+                                                    <InfoRow label="Explore" value={p.planExplore} />
+                                                    <InfoRow label="Challenge" value={p.planChallenge} />
+                                                    <InfoRow label="Execute" value={p.planExecute} />
+
+                                                    {/* Skill Scores */}
+                                                    {[
+                                                        { label: 'Tech Primary', data: p.techPrimary },
+                                                        { label: 'Tech Secondary', data: p.techSecondary },
+                                                        { label: 'Game IQ', data: p.gameIq },
+                                                        { label: 'Mental', data: p.mentalScores },
+                                                        { label: 'Physical', data: p.physicalScores },
+                                                        { label: 'Phase Ratings', data: p.phaseRatings },
+                                                    ].map(({ label, data }) => data && Object.keys(data).length > 0 ? (
+                                                        <div key={label} style={{ marginTop: 4 }}>
+                                                            <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, marginBottom: 2 }}>{label.toUpperCase()}</div>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                                {Object.entries(data).map(([key, val]) => (
+                                                                    <span key={key} style={{ padding: '2px 6px', borderRadius: 4, background: `${B.pk}08`, border: `1px solid ${B.pk}20`, fontSize: 9, fontFamily: F, color: B.nvD }}>
+                                                                        {key.replace(/_/g, ' ')}: <strong>{val}</strong>
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : null)}
+                                                </>
+                                            )}
+
+                                            {/* No DNA notice */}
+                                            {!p.hasDNA && !p.hasAssessment && (
+                                                <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 12, fontStyle: 'italic' }}>
+                                                    No DNA profile or coach assessment on file.
+                                                </div>
+                                            )}
 
                                             {sessions.length > 0 && (
                                                 <>
