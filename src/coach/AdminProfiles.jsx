@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { B, F, sCard, getDkWrap } from "../data/theme";
 import { ROLES } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
-import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, bulkArchivePlayers, bulkDeletePlayers, updateCohortPlayer } from "../db/adminDb";
+import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, bulkArchivePlayers, bulkDeletePlayers, updateCohortPlayer, deleteCohortPlayer, bulkDeleteCohortPlayers } from "../db/adminDb";
 
 const TABS = [
     { id: 'active', label: 'Active' },
@@ -143,6 +143,8 @@ export default function AdminProfiles() {
                 showFeedback('ok', `${profile.name} archived`);
                 loadData();
             } catch (err) { showFeedback('err', 'Archive failed'); }
+        } else {
+            showFeedback('err', `${profile.name} has no DNA profile to archive`);
         }
     };
 
@@ -157,10 +159,11 @@ export default function AdminProfiles() {
     };
 
     const handleDelete = async (profile) => {
-        if (!profile.dnaId) return;
+        if (!profile.dnaId && !profile.cohortId) return;
         if (!window.confirm(`Permanently delete ${profile.name} and all their data? This cannot be undone.`)) return;
         try {
-            await deletePlayer(profile.dnaId);
+            if (profile.dnaId) await deletePlayer(profile.dnaId);
+            if (profile.cohortId) await deleteCohortPlayer(profile.cohortId);
             showFeedback('ok', `${profile.name} deleted`);
             loadData();
         } catch (err) { showFeedback('err', 'Delete failed'); }
@@ -181,8 +184,9 @@ export default function AdminProfiles() {
     };
 
     const handleBulkArchive = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive'); return; }
+        const selected = filtered.filter(p => selectedIds.has(p.id));
+        const dnaIds = selected.filter(p => p.dnaId).map(p => p.dnaId);
+        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive in selection'); return; }
         try {
             await bulkArchivePlayers(dnaIds);
             showFeedback('ok', `${dnaIds.length} players archived`);
@@ -192,15 +196,47 @@ export default function AdminProfiles() {
     };
 
     const handleBulkDelete = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to delete'); return; }
-        if (!window.confirm(`Permanently delete ${dnaIds.length} players? This cannot be undone.`)) return;
+        const selected = filtered.filter(p => selectedIds.has(p.id));
+        const dnaIds = selected.filter(p => p.dnaId).map(p => p.dnaId);
+        const cohortOnlyIds = selected.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+        const total = dnaIds.length + cohortOnlyIds.length;
+        if (total === 0) { showFeedback('err', 'No profiles to delete'); return; }
+        if (!window.confirm(`Permanently delete ${total} players? This cannot be undone.`)) return;
         try {
-            await bulkDeletePlayers(dnaIds);
-            showFeedback('ok', `${dnaIds.length} players deleted`);
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${total} players deleted`);
             setSelectedIds(new Set());
             loadData();
         } catch (err) { showFeedback('err', 'Bulk delete failed'); }
+    };
+
+    const handleArchiveAll = async () => {
+        const dnaIds = filtered.filter(p => p.dnaId).map(p => p.dnaId);
+        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive'); return; }
+        if (!window.confirm(`Archive all ${dnaIds.length} visible players? They can be restored later.`)) return;
+        try {
+            await bulkArchivePlayers(dnaIds);
+            showFeedback('ok', `${dnaIds.length} players archived`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Archive all failed'); }
+    };
+
+    const handleDeleteAll = async () => {
+        const dnaIds = filtered.filter(p => p.dnaId).map(p => p.dnaId);
+        const cohortOnlyIds = filtered.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+        const total = dnaIds.length + cohortOnlyIds.length;
+        if (total === 0) { showFeedback('err', 'No profiles to delete'); return; }
+        if (!window.confirm(`⚠️ PERMANENTLY DELETE ALL ${total} visible players? This cannot be undone!`)) return;
+        if (!window.confirm(`Are you absolutely sure? This will delete ${total} players and ALL their data permanently.`)) return;
+        try {
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${total} players deleted`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Delete all failed'); }
     };
 
     // ── Render ──
@@ -249,6 +285,16 @@ export default function AdminProfiles() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, suburb, club..."
                     style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none' }} />
+                {tab === 'active' && (
+                    <button onClick={handleArchiveAll}
+                        style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                        Archive All
+                    </button>
+                )}
+                <button onClick={handleDeleteAll}
+                    style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                    Delete All
+                </button>
             </div>
 
             {/* Bulk action bar */}
@@ -305,6 +351,10 @@ export default function AdminProfiles() {
                                     {tab === 'archived' && (
                                         <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
                                             style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.grn}30`, background: `${B.grn}08`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
+                                    )}
+                                    {(p.dnaId || p.cohortId) && (
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.red}30`, background: `${B.red}08`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
                                     )}
                                 </div>
                                 <div onClick={() => setExpandedId(isExpanded ? null : p.id)}

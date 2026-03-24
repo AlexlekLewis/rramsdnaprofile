@@ -307,15 +307,27 @@ export async function restorePlayer(playerId) {
 export async function deletePlayer(playerId) {
     // Remove related data first
     await supabase.from('coach_assessments').delete().eq('player_id', playerId);
+    await supabase.from('assessment_history').delete().eq('player_id', playerId);
     await supabase.from('competition_grades').delete().eq('player_id', playerId);
     await supabase.from('squad_allocations').delete().eq('player_id', playerId);
     await supabase.from('idp_goals').delete().eq('player_id', playerId);
     await supabase.from('idp_focus_areas').delete().eq('player_id', playerId);
     await supabase.from('idp_notes').delete().eq('player_id', playerId);
     await supabase.from('journal_entries').delete().eq('player_id', playerId);
-    // Then delete the player
+    // Look up auth_user_id before deleting the player
+    const { data: player } = await supabase
+        .from('players')
+        .select('auth_user_id')
+        .eq('id', playerId)
+        .maybeSingle();
+    // Delete the player record
     const { error } = await supabase.from('players').delete().eq('id', playerId);
     if (error) throw error;
+    // Clean up program_members and user_profiles if linked to an auth user
+    if (player?.auth_user_id) {
+        await supabase.from('program_members').delete().eq('auth_user_id', player.auth_user_id);
+        await supabase.from('user_profiles').delete().eq('id', player.auth_user_id);
+    }
 }
 
 export async function bulkArchivePlayers(playerIds) {
@@ -324,12 +336,31 @@ export async function bulkArchivePlayers(playerIds) {
         .update({ submitted: false, updated_at: new Date().toISOString() })
         .in('id', playerIds);
     if (error) throw error;
+    // Deactivate associated program memberships
+    const { data: players } = await supabase
+        .from('players')
+        .select('auth_user_id')
+        .in('id', playerIds);
+    const authIds = (players || []).map(p => p.auth_user_id).filter(Boolean);
+    if (authIds.length > 0) {
+        await supabase.from('program_members').update({ active: false }).in('auth_user_id', authIds);
+    }
 }
 
 export async function bulkDeletePlayers(playerIds) {
     for (const id of playerIds) {
         await deletePlayer(id);
     }
+}
+
+export async function deleteCohortPlayer(cohortId) {
+    const { error } = await supabase.from('official_cohort_2026').delete().eq('id', cohortId);
+    if (error) throw error;
+}
+
+export async function bulkDeleteCohortPlayers(cohortIds) {
+    const { error } = await supabase.from('official_cohort_2026').delete().in('id', cohortIds);
+    if (error) throw error;
 }
 
 export async function updateCohortPlayer(cohortId, updates) {
