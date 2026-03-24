@@ -97,6 +97,7 @@ export default function AdminProfiles() {
                     assessmentDate: assessment?.updated_at,
                     isArchived: dna ? !dna.submitted : false,
                     source_table: source,
+                    createdAt: dna?.created_at || c.created_at,
                 };
             };
 
@@ -258,6 +259,22 @@ export default function AdminProfiles() {
         } catch (err) { showFeedback('err', 'Delete all failed'); }
     };
 
+    const handleDeleteOld = async () => {
+        const yesterday = new Date(Date.now() - 86400000).toISOString();
+        const old = filtered.filter(p => p.createdAt && p.createdAt < yesterday);
+        if (old.length === 0) { showFeedback('err', 'No players created before yesterday'); return; }
+        if (!window.confirm(`Permanently delete ${old.length} players created before yesterday? This cannot be undone.`)) return;
+        try {
+            const dnaIds = old.filter(p => p.dnaId).map(p => p.dnaId);
+            const cohortOnlyIds = old.filter(p => !p.dnaId && p.cohortId).map(p => p.cohortId);
+            if (dnaIds.length > 0) await bulkDeletePlayers(dnaIds);
+            if (cohortOnlyIds.length > 0) await bulkDeleteCohortPlayers(cohortOnlyIds);
+            showFeedback('ok', `${old.length} old players deleted`);
+            setSelectedIds(new Set());
+            loadData();
+        } catch (err) { showFeedback('err', 'Delete old failed'); }
+    };
+
     // ── Render ──
 
     const currentProfiles = tab === 'active' ? profiles : archivedProfiles;
@@ -310,6 +327,10 @@ export default function AdminProfiles() {
                         Archive All
                     </button>
                 )}
+                <button onClick={handleDeleteOld}
+                    style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.org}`, background: `${B.org}10`, color: B.org, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                    Delete Old
+                </button>
                 <button onClick={handleDeleteAll}
                     style={{ fontSize: 10, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
                     Delete All
@@ -360,20 +381,20 @@ export default function AdminProfiles() {
                                     </div>
                                 </div>
                                 {/* Quick action buttons */}
-                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                                     <button onClick={(e) => { e.stopPropagation(); handleEdit(p); setExpandedId(p.id); }}
-                                        style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.bl}30`, background: `${B.bl}08`, color: B.bl, cursor: 'pointer', fontFamily: F }}>Edit</button>
+                                        style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.bl}`, background: `${B.bl}10`, color: B.bl, cursor: 'pointer', fontFamily: F }}>Edit</button>
                                     {tab === 'active' && p.dnaId && (
                                         <button onClick={(e) => { e.stopPropagation(); handleArchive(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.amb}30`, background: `${B.amb}08`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
                                     )}
                                     {tab === 'archived' && (
                                         <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.grn}30`, background: `${B.grn}08`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.grn}`, background: `${B.grn}10`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
                                     )}
                                     {(p.dnaId || p.cohortId) && (
                                         <button onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.red}30`, background: `${B.red}08`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
+                                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 6, border: `1.5px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
                                     )}
                                 </div>
                                 <div onClick={() => setExpandedId(isExpanded ? null : p.id)}
