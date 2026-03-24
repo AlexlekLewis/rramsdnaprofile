@@ -822,7 +822,7 @@ export default function CoachAssessment() {
                 const currentIdx = submitted.findIndex(p => p.id === sp.id);
                 const prevP = currentIdx > 0 ? submitted[currentIdx - 1] : null;
                 const nextP = currentIdx < submitted.length - 1 ? submitted[currentIdx + 1] : null;
-                return (
+                return (<>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: B.w, borderBottom: `1px solid ${B.g200}` }}>
                         <button disabled={!prevP} onClick={() => { if (prevP) { setSelP(prevP.id); setCPage(0); goTop(); } }}
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${prevP ? B.g200 : 'transparent'}`, background: 'transparent', color: prevP ? B.g600 : B.g200, fontSize: 14, cursor: prevP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>←</button>
@@ -838,7 +838,11 @@ export default function CoachAssessment() {
                         <button disabled={!nextP} onClick={() => { if (nextP) { setSelP(nextP.id); setCPage(0); goTop(); } }}
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${nextP ? B.g200 : 'transparent'}`, background: 'transparent', color: nextP ? B.g600 : B.g200, fontSize: 14, cursor: nextP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>→</button>
                     </div>
-                );
+                    <div style={{ padding: '4px 12px', background: B.g50, borderBottom: `1px solid ${B.g100}`, display: 'flex', justifyContent: 'center' }}>
+                        <button onClick={() => { setCView("list"); setSelP(null); goTop(); }}
+                            style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, textDecoration: 'underline' }}>← Back to Roster</button>
+                    </div>
+                </>);
             })()}
 
             <div style={{ padding: isDesktop() ? '8px 16px' : '6px 12px', background: B.g50, borderBottom: `1px solid ${B.g200}`, display: "flex", gap: isDesktop() ? 6 : 4, overflowX: "auto", justifyContent: isDesktop() ? 'center' : 'flex-start' }}>

@@ -44,8 +44,8 @@ export function getPlayerAge(dob) {
 
 function getGenderPool(gender) {
     if (!gender) return 'male';
-    const g = gender.toLowerCase();
-    if (g.includes('female') || g.includes('girl') || g.includes('women')) return 'female';
+    const g = gender.toLowerCase().trim();
+    if (g === 'f' || g.includes('female') || g.includes('girl') || g.includes('women')) return 'female';
     return 'male';
 }
 

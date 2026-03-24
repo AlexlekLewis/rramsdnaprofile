@@ -96,12 +96,15 @@ export function calcCCM(grades, dob, compTiers, constants) {
 }
 
 // ═══ STATISTICAL PERFORMANCE DOMAIN v2.0 ═══
+// Tier-relative benchmarks: wider gaps between levels so lower-tier stats
+// don't inflate scores. A 25 avg at association should score well below
+// a 25 avg at premier — the competition quality difference is significant.
 export const FALLBACK_STAT_BENCHMARKS = {
-    low: { rpi: [6, 10, 16, 24, 35], batSR: [40, 55, 70, 85, 100], bowlEcon: [7.5, 6.5, 5.5, 4.5, 3.5], bowlAvg: [40, 32, 25, 18, 12] },
-    mid: { rpi: [8, 14, 22, 32, 45], batSR: [45, 60, 75, 90, 110], bowlEcon: [7.0, 6.0, 5.0, 4.0, 3.0], bowlAvg: [35, 28, 22, 16, 10] },
-    high: { rpi: [10, 18, 28, 40, 55], batSR: [50, 65, 80, 95, 115], bowlEcon: [6.5, 5.5, 4.5, 3.5, 2.8], bowlAvg: [32, 25, 19, 14, 9] },
-    elite: { rpi: [14, 24, 36, 50, 65], batSR: [55, 70, 85, 100, 120], bowlEcon: [6.0, 5.0, 4.0, 3.2, 2.5], bowlAvg: [28, 22, 17, 12, 8] },
-    top: { rpi: [18, 30, 44, 58, 75], batSR: [60, 75, 90, 105, 125], bowlEcon: [5.5, 4.5, 3.5, 2.8, 2.2], bowlAvg: [25, 20, 15, 10, 7] },
+    low:   { rpi: [4, 8, 13, 20, 30],   batSR: [35, 50, 65, 80, 95],   bowlEcon: [8.0, 7.0, 6.0, 5.0, 4.0], bowlAvg: [45, 36, 28, 20, 14] },
+    mid:   { rpi: [10, 18, 28, 40, 55],  batSR: [50, 65, 80, 95, 115],  bowlEcon: [6.5, 5.5, 4.5, 3.5, 2.8], bowlAvg: [32, 25, 19, 14, 9] },
+    high:  { rpi: [14, 24, 36, 50, 65],  batSR: [55, 70, 85, 100, 120], bowlEcon: [6.0, 5.0, 4.0, 3.2, 2.5], bowlAvg: [28, 22, 17, 12, 8] },
+    elite: { rpi: [18, 30, 44, 58, 75],  batSR: [60, 75, 90, 105, 125], bowlEcon: [5.5, 4.5, 3.5, 2.8, 2.2], bowlAvg: [25, 20, 15, 10, 7] },
+    top:   { rpi: [22, 36, 52, 68, 85],  batSR: [65, 80, 95, 110, 130], bowlEcon: [5.0, 4.0, 3.2, 2.5, 2.0], bowlAvg: [22, 17, 13, 9, 6] },
 };
 
 export const FALLBACK_SUB_WEIGHTS = {
@@ -121,13 +124,15 @@ export const FALLBACK_DOMAIN_WEIGHTS = {
 export const FALLBACK_THRESHOLDS = { minBatInn: 5, minOvers: 20, minMatches: 5 };
 
 // ═══ PEAK PERFORMANCE BENCHMARKS ═══
+// Peak benchmarks: at lower tiers you need bigger scores to impress.
+// A 50 at association level is good but not exceptional; a 50 at premier is outstanding.
 export const PEAK_BENCHMARKS = {
     batRuns: {
-        low: [15, 25, 40, 60, 85],
-        mid: [12, 22, 35, 55, 80],
-        high: [10, 18, 30, 50, 75],
+        low:   [20, 35, 55, 80, 110],
+        mid:   [12, 22, 35, 55, 80],
+        high:  [10, 18, 30, 50, 75],
         elite: [8, 15, 25, 45, 70],
-        top: [6, 12, 22, 40, 65],
+        top:   [6, 12, 22, 40, 65],
     },
     bowlWkts: [0, 1, 2, 3, 4],
 };
@@ -258,9 +263,22 @@ export function calcStatDomain(grades, role, cti, arm, playerAge, opts = {}, top
     let band = getCTIBand(cti);
 
     if (hasSeason) {
+        // Pick the highest-CTI grade as primary (best competition level).
+        // Tiebreak: prefer the grade with better stats (higher runs or wickets)
+        // so the player's best performance at that level is what gets scored.
         const primary = grades.reduce((best, g) => {
-            const m = +g.matches || 0;
-            return m > (+best.matches || 0) ? g : best;
+            const gTier = compTiers.find(t => t.code === g.level);
+            const bTier = compTiers.find(t => t.code === best.level);
+            const gCTI = gTier ? parseFloat(gTier.cti_value) : 0;
+            const bCTI = bTier ? parseFloat(bTier.cti_value) : 0;
+            if (gCTI > bCTI) return g;
+            if (gCTI === bCTI) {
+                // Same tier — pick the grade with stronger stats
+                const gRuns = +g.runs || 0, bRuns = +best.runs || 0;
+                const gWkts = +g.wkts || 0, bWkts = +best.wkts || 0;
+                if ((gRuns + gWkts * 20) > (bRuns + bWkts * 20)) return g;
+            }
+            return best;
         }, grades[0]);
 
         const matches = +primary.matches || 0;
@@ -333,7 +351,15 @@ export function calcStatDomain(grades, role, cti, arm, playerAge, opts = {}, top
         rawScore = 0;
     }
 
-    const css = rawScore * (arm || 1);
+    // Competition level + age relativity compound as multipliers:
+    // CTI reflects the difficulty of the competition (higher = harder = more impressive)
+    // ARM reflects playing above your age group (younger = more impressive)
+    // A player performing well at a harder level deserves a higher score than
+    // one performing equally well at an easier level.
+    // If no season grades (CTI = 0), peaks-only players get a low baseline CTI
+    // since their data is unverified by season-long performance.
+    const ctiBoost = cti > 0 ? cti : 0.30;
+    const css = rawScore * ctiBoost * (arm || 1);
 
     return {
         css: Math.round(css * 100) / 100,
