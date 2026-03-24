@@ -281,10 +281,9 @@ export default function AdminProfiles() {
                             <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontSize: 14 }} title={p.hasDNA ? 'DNA Complete' : 'In Progress'}>{p.hasDNA ? '✅' : '🔄'}</span>
                                         <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F }}>{p.name}</div>
-                                        {p.hasDNA && <span style={{ fontSize: 7, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: `${B.grn}15`, color: B.grn }}>DNA</span>}
                                         {p.hasAssessment && <span style={{ fontSize: 7, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: `${B.pk}15`, color: B.pk }}>ASSESSED</span>}
-                                        {p.isArchived && <span style={{ fontSize: 7, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: `${B.red}15`, color: B.red }}>ARCHIVED</span>}
                                     </div>
                                     <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 2 }}>
                                         {[p.age ? `${p.age}yo` : null, p.gender, p.suburb, p.club].filter(Boolean).join(' · ')}
