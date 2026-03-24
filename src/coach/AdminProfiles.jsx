@@ -7,8 +7,8 @@ import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortP
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
-    { id: 'active', label: 'Active' },
-    { id: 'archived', label: 'Archived' },
+    { id: 'active', label: 'Completed' },
+    { id: 'archived', label: 'In Progress' },
 ];
 
 // ── Confirmation Modal (module-level) ──
@@ -85,63 +85,56 @@ export default function AdminProfiles() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [{ data: cohort }, { data: apps }, { data: dnaPlayers }, { data: assessments }, { data: archivedDna }] = await Promise.all([
-                supabase.from('official_cohort_2026').select('*').order('player_name'),
-                supabase.from('applications').select('*').order('first_name'),
-                supabase.from('players').select('*').eq('submitted', true),
+            // Primary source: players who have actually signed up (submitted or drafts)
+            const [{ data: submittedPlayers }, { data: draftPlayers }, { data: assessments }, { data: cohort }, { data: members }] = await Promise.all([
+                supabase.from('players').select('*').eq('submitted', true).order('name'),
+                supabase.from('players').select('*').eq('submitted', false).order('name'),
                 supabase.from('coach_assessments').select('player_id, narrative, strengths, priorities, updated_at'),
-                supabase.from('players').select('*').eq('submitted', false),
+                supabase.from('official_cohort_2026').select('*'),
+                supabase.from('program_members').select('display_name, username, auth_user_id, created_at').eq('active', true),
             ]);
 
-            // Deduplicate cohort
-            const deduped = {};
-            (cohort || []).filter(c => c.player_name && c.player_name.length > 3).forEach(c => {
-                const key = c.player_name.toLowerCase().trim();
-                if (!deduped[key]) { deduped[key] = c; return; }
-                const existing = deduped[key];
-                const es = (existing.dob ? 1 : 0) + (existing.selected_sessions ? 1 : 0) + (existing.age ? 1 : 0);
-                const ns = (c.dob ? 1 : 0) + (c.selected_sessions ? 1 : 0) + (c.age ? 1 : 0);
-                if (ns > es) deduped[key] = c;
+            // Build cohort lookup by name for enrichment
+            const cohortByName = {};
+            (cohort || []).forEach(c => {
+                if (c.player_name) cohortByName[c.player_name.toLowerCase().trim()] = c;
             });
 
-            const mergeProfile = (c, source) => {
-                const app = (apps || []).find(a => a.email && c.email && a.email.toLowerCase() === c.email.toLowerCase());
-                const dna = (dnaPlayers || []).concat(archivedDna || []).find(p => p.name?.toLowerCase().trim() === c.player_name?.toLowerCase().trim());
-                const assessment = dna ? (assessments || []).find(a => a.player_id === dna.id) : null;
+            const buildProfile = (p) => {
+                const c = cohortByName[p.name?.toLowerCase().trim()] || {};
+                const assessment = (assessments || []).find(a => a.player_id === p.id);
+                const member = (members || []).find(m => m.auth_user_id === p.auth_user_id);
                 return {
-                    id: c.id, cohortId: c.id, dnaId: dna?.id,
-                    name: c.player_name, firstName: c.first_name, lastName: c.last_name,
-                    dob: c.dob || app?.dob, age: c.age || app?.age,
-                    gender: c.gender, suburb: c.suburb,
-                    club: c.club || dna?.club || app?.club,
-                    email: c.email, playerEmail: c.player_email, playerPhone: c.player_phone, phone: c.phone,
+                    id: p.id, dnaId: p.id, cohortId: c.id || null,
+                    name: p.name, dob: p.dob || c.dob, age: c.age || null,
+                    gender: p.gender || c.gender, suburb: c.suburb || null,
+                    club: p.club || c.club,
+                    email: p.email || c.email, playerEmail: c.player_email, playerPhone: c.player_phone, phone: c.phone,
                     parent1: { name: c.parent1_name, email: c.parent1_email, phone: c.parent1_phone },
                     parent2: { name: c.parent2_name, email: c.parent2_email, phone: c.parent2_phone },
                     selectedSessions: c.selected_sessions, preferredComms: c.preferred_comms,
                     shirtName: c.shirt_name, sizeTshirt: c.size_tshirt, sizeShort: c.size_short, sizePants: c.size_pants,
-                    role: dna?.role, playerRole: c.player_role, cricketType: c.cricket_type,
+                    role: p.role, playerRole: c.player_role, cricketType: c.cricket_type,
                     paymentStatus: c.payment_status, paymentOption: c.payment_option_selected,
-                    acceptedOffer: c.accepted_offer, groupChatConsent: c.group_chat_consent,
-                    profileLink: c.profile_link || app?.profile_link,
-                    history: c.history || app?.history, bio: c.bio || app?.bio, goals: c.goals || app?.goals,
-                    source: c.source || app?.source,
-                    hasDNA: !!dna && dna.submitted, dnaRole: dna?.role,
-                    batHand: dna?.batting_hand, bowlType: dna?.bowling_type,
-                    dnaArchBat: dna?.player_bat_archetype, dnaArchBwl: dna?.player_bwl_archetype,
-                    injury: dna?.injury, heightCm: dna?.height_cm,
+                    hasDNA: !!p.submitted, dnaRole: p.role,
+                    batHand: p.batting_hand, bowlType: p.bowling_type,
+                    dnaArchBat: p.player_bat_archetype, dnaArchBwl: p.player_bwl_archetype,
+                    injury: p.injury, heightCm: p.height_cm,
                     hasAssessment: !!assessment, narrative: assessment?.narrative,
-                    isArchived: dna ? !dna.submitted : false,
-                    source_table: source,
+                    isArchived: false, source_table: 'players',
+                    username: member?.username || null,
+                    signupDate: member?.created_at || p.created_at,
                 };
             };
 
-            setProfiles(Object.values(deduped).map(c => mergeProfile(c, 'cohort')));
+            // Active = submitted DNA profiles
+            setProfiles((submittedPlayers || []).map(buildProfile));
 
-            // Archived = DNA players with submitted=false
-            setArchivedProfiles((archivedDna || []).map(p => ({
-                id: p.id, dnaId: p.id, name: p.name, dob: p.dob, age: null,
-                gender: p.gender, suburb: null, club: p.club, email: p.email,
-                role: p.role, isArchived: true, source_table: 'players',
+            // Drafts = players still onboarding (submitted=false)
+            setArchivedProfiles((draftPlayers || []).map(p => ({
+                ...buildProfile(p),
+                isArchived: true,
+                hasDNA: false,
             })));
         } catch (err) {
             console.error('Profile load error:', err);
