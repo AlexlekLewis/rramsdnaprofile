@@ -285,9 +285,8 @@ export default function AdminProfiles() {
                     return (
                         <div key={p.id} style={{ ...sCard, padding: 0, marginBottom: 0 }}>
                             {/* Header row */}
-                            <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
-                                onClick={() => setExpandedId(isExpanded ? null : p.id)}>
-                                <div style={{ flex: 1 }}>
+                            <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F }}>{p.name}</div>
                                         {p.hasDNA && <span style={{ fontSize: 7, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: `${B.grn}15`, color: B.grn }}>DNA</span>}
@@ -298,7 +297,30 @@ export default function AdminProfiles() {
                                         {[p.age ? `${p.age}yo` : null, p.gender, p.suburb, p.club].filter(Boolean).join(' · ')}
                                     </div>
                                 </div>
-                                <div style={{ fontSize: 10, color: B.g400, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▼</div>
+                                {/* Quick actions — always visible */}
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                                    <button onClick={(e) => { e.stopPropagation(); setExpandedId(p.id); handleEdit(p); }}
+                                        style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${B.bl}`, background: B.w, color: B.bl, fontSize: 10, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                        Edit
+                                    </button>
+                                    {tab === 'active' && p.dnaId && (
+                                        <button onClick={(e) => { e.stopPropagation(); requestArchive(p); }}
+                                            style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${B.amb}`, background: B.w, color: B.amb, fontSize: 10, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                            Archive
+                                        </button>
+                                    )}
+                                    {tab === 'archived' && (
+                                        <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
+                                            style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${B.grn}`, background: B.w, color: B.grn, fontSize: 10, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                            Restore
+                                        </button>
+                                    )}
+                                    <button onClick={(e) => { e.stopPropagation(); requestDelete(p); }}
+                                        style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${B.red}`, background: B.w, color: B.red, fontSize: 10, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                        Delete
+                                    </button>
+                                    <div onClick={() => setExpandedId(isExpanded ? null : p.id)} style={{ fontSize: 10, color: B.g400, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', cursor: 'pointer', padding: '4px' }}>▼</div>
+                                </div>
                             </div>
 
                             {/* Expanded: edit mode or view mode */}
