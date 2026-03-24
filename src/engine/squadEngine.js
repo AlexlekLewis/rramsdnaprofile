@@ -97,20 +97,77 @@ export function parseSessionPrefs(selectedSessions) {
 
 // ── Rule 7: Session Preference Score ──
 
+// Estimated distances from training venue (Plenty Rd, Bundoora area)
+// Grouped by approximate km bands for squad allocation
+const TRAVEL_DISTANCE_60PLUS = [
+    'traralgon', 'warragul', 'drouin', 'geelong', 'ballarat', 'bendigo',
+    'kilmore', 'wallan', 'mornington', 'rosebud', 'bacchus marsh',
+    'gisborne', 'healesville', 'yarra glen', 'riddells creek', "murphy's creek",
+    'strathtulloh', 'mambourin', 'melton', 'botanic ridge',
+    'clyde north', 'clyde', 'officer', 'pakenham',
+    'cranbourne', 'cranbourne north', 'cranbourne west',
+    'narre warren', 'narre warren south', 'berwick',
+];
+const TRAVEL_DISTANCE_30_60 = [
+    'werribee', 'point cook', 'tarneit', 'truganina', 'williams landing',
+    'west footscray', 'footscray', 'seddon', 'yarraville',
+    'frankston', 'cheltenham', 'bentleigh', 'bentleigh east', 'brighton',
+    'brighton east', 'beaumaris', 'glen waverley', 'mount waverley',
+    'rowville', 'scoresby', 'ferntree gully', 'ringwood', 'wantirna',
+    'dandenong', 'dandenong north', 'noble park', 'bangholme',
+    'docklands', 'melbourne', 'richmond', 'south yarra', 'prahran',
+    'st kilda', 'port melbourne', 'south melbourne', 'albert park',
+    'chadstone', 'ashwood', 'blackburn', 'mitcham', 'nunawading',
+    'vermont south', 'glen huntly', 'malvern', 'east malvern',
+    'hawthorn', 'hawthorn east', 'camberwell', 'canterbury', 'balwyn',
+    'kew', 'toorak', 'armadale', 'ascot vale',
+    'craigieburn', 'mickleham',
+];
+const TRAVEL_DISTANCE_CLOSE = [
+    'bundoora', 'plenty', 'south morang', 'mill park', 'epping',
+    'thomastown', 'lalor', 'reservoir', 'preston', 'northcote',
+    'ivanhoe', 'heidelberg', 'bulleen', 'doncaster', 'eltham',
+    'montmorency', 'hurstbridge', 'north warrandyte',
+    'doreen', 'donnybrook', 'mernda', 'wollert', 'whittlesea',
+    'fawkner', 'coburg', 'brunswick', 'fitzroy', 'collingwood', 'carlton',
+];
+
+const TRAVEL_HARD_THRESHOLD_KM = 60;
+
+export function estimateTravelKm(suburb) {
+    if (!suburb) return 25; // unknown → assume mid-range
+    const s = suburb.toLowerCase().replace(/[^a-z ]/g, '').trim();
+    // Strip postcodes and addresses — extract suburb name
+    const words = s.split(/\s+/);
+    // Try matching progressively shorter substrings
+    for (const list of [
+        { suburbs: TRAVEL_DISTANCE_60PLUS, km: 75 },
+        { suburbs: TRAVEL_DISTANCE_30_60, km: 40 },
+        { suburbs: TRAVEL_DISTANCE_CLOSE, km: 12 },
+    ]) {
+        if (list.suburbs.some(f => s.includes(f))) return list.km;
+    }
+    return 25; // unknown suburb → mid-range estimate
+}
+
 function calcTravelAlignment(suburb, isLateSlot) {
-    // Simplified: estimate distance category from suburb name
-    // In production, this would use geocoding. For now, use heuristic based on known Melbourne suburbs.
-    const FAR_SUBURBS = ['pakenham', 'cranbourne', 'frankston', 'werribee', 'melton', 'sunbury', 'wallan', 'kilmore', 'bacchus marsh', 'gisborne', 'healesville', 'yarra glen', 'warragul', 'drouin', 'mornington', 'rosebud', 'geelong', 'ballarat', 'bendigo', 'traralgon'];
-    const CLOSE_SUBURBS = ['richmond', 'collingwood', 'fitzroy', 'carlton', 'brunswick', 'northcote', 'south yarra', 'prahran', 'st kilda', 'port melbourne', 'south melbourne', 'albert park', 'kew', 'hawthorn', 'camberwell', 'malvern', 'toorak', 'armadale', 'footscray', 'seddon', 'yarraville'];
+    const km = estimateTravelKm(suburb);
+    if (km >= TRAVEL_HARD_THRESHOLD_KM) return isLateSlot ? 1.0 : 0.10; // Strongly prefer late
+    if (km >= 30) return isLateSlot ? 0.85 : 0.50; // Slight late preference
+    return isLateSlot ? 0.60 : 1.0; // Close → slight early preference
+}
 
-    if (!suburb) return 0.70; // mid
-    const s = suburb.toLowerCase();
-    const isFar = FAR_SUBURBS.some(f => s.includes(f));
-    const isClose = CLOSE_SUBURBS.some(c => s.includes(c));
+// ── Rule 9: Age-time preference (younger → earlier, older → later) ──
+const AGE_TIME_WEIGHT = 0.08; // Soft preference added to composite
 
-    if (isFar) return isLateSlot ? 1.0 : 0.30;
-    if (isClose) return isLateSlot ? 0.80 : 1.0;
-    return 0.70; // mid-range
+function calcAgeTimePreference(age, isLateSlot) {
+    if (age == null) return 0;
+    // Under 14 → prefer 5-7pm (+bonus for early, -penalty for late)
+    // Over 16 → prefer 7-9pm (+bonus for late, -penalty for early)
+    // 14-16 → neutral
+    if (age < 14) return isLateSlot ? -AGE_TIME_WEIGHT : AGE_TIME_WEIGHT;
+    if (age > 16) return isLateSlot ? AGE_TIME_WEIGHT : -AGE_TIME_WEIGHT;
+    return 0; // 14-16 neutral
 }
 
 export function calcSPS(playerPrefs, squadWeekday, squadWeekendBlock, suburb) {
@@ -261,6 +318,10 @@ export function autoAssignSquads(players, sessionConfig) {
             // Rule 8: Sibling constraint — must match sibling's time slot
             const requiredSlot = getSiblingTimeSlot(player, siblingGroups, placedPlayers);
 
+            // Rule 9: Travel distance — 60+ km must be 7-9pm (hard constraint)
+            const travelKm = estimateTravelKm(player.suburb);
+            const mustBeLate = travelKm >= TRAVEL_HARD_THRESHOLD_KM;
+
             // Score each squad
             let bestSquad = null;
             let bestScore = -Infinity;
@@ -272,6 +333,9 @@ export function autoAssignSquads(players, sessionConfig) {
 
                 // Rule 8: Gate — sibling time slot (hard constraint)
                 if (requiredSlot && squad.weekday !== requiredSlot) continue;
+
+                // Rule 9: Gate — travel distance (hard constraint: 60+ km → must be 7-9pm)
+                if (mustBeLate && !squad.weekday.includes('7-9pm')) continue;
 
                 // Rule 5: Gate B — age banding (skip if player has no age data)
                 let ageBlocked = false;
@@ -292,8 +356,12 @@ export function autoAssignSquads(players, sessionConfig) {
                 // Rule 7: SPS
                 const sps = calcSPS(player.prefs, squad.weekday, squad.weekend, player.suburb);
 
+                // Rule 10: Age-time preference (younger → earlier, older → later)
+                const isLate = squad.weekday.includes('7-9pm');
+                const ageTimePref = calcAgeTimePreference(player.age, isLate);
+
                 // Rule 3: Composite
-                const composite = (COMPOSITE_CCM_WEIGHT * normCCM) + (COMPOSITE_SPS_WEIGHT * sps) + roleAdj;
+                const composite = (COMPOSITE_CCM_WEIGHT * normCCM) + (COMPOSITE_SPS_WEIGHT * sps) + roleAdj + ageTimePref;
 
                 if (composite > bestScore) {
                     bestScore = composite;
@@ -311,7 +379,10 @@ export function autoAssignSquads(players, sessionConfig) {
                     result.siblingGroups.push({ player: player.name, squad: bestSquad.name, slot: requiredSlot, reason: 'Sibling time slot constraint' });
                 }
             } else {
-                result.overflow.push({ ...player, reason: requiredSlot ? `No valid squad at sibling time slot (${requiredSlot})` : (player.age == null ? 'No age data' : 'No valid squad (age banding / capacity)') });
+                const overflowReason = requiredSlot ? `No valid squad at sibling time slot (${requiredSlot})`
+                    : mustBeLate ? 'No 7-9pm squad available (60+ km travel)'
+                    : (player.age == null ? 'No age data' : 'No valid squad (age banding / capacity)');
+                result.overflow.push({ ...player, reason: overflowReason });
             }
 
             // Data quality flags
