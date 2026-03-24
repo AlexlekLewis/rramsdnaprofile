@@ -3,12 +3,66 @@ import React, { useState, useEffect, useCallback } from "react";
 import { B, F, sCard, getDkWrap } from "../data/theme";
 import { ROLES } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
-import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, bulkArchivePlayers, bulkDeletePlayers, updateCohortPlayer } from "../db/adminDb";
+import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, updateCohortPlayer } from "../db/adminDb";
+// Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
     { id: 'active', label: 'Active' },
     { id: 'archived', label: 'Archived' },
 ];
+
+// ── Confirmation Modal (module-level) ──
+const ConfirmModal = React.memo(({ action, onConfirm, onCancel }) => {
+    if (!action) return null;
+    const isDelete = action.type === 'delete';
+    const color = isDelete ? B.red : B.amb;
+    const names = action.names || [];
+    return (
+        <div onClick={onCancel} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: B.w, borderRadius: 16, padding: 24, maxWidth: 360, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                {/* Icon */}
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <span style={{ fontSize: 24 }}>{isDelete ? '🗑' : '📦'}</span>
+                </div>
+
+                {/* Title */}
+                <div style={{ fontSize: 16, fontWeight: 800, color: B.nvD, fontFamily: F, textAlign: 'center', marginBottom: 8 }}>
+                    {isDelete ? 'Delete' : 'Archive'} {names.length === 1 ? names[0] : `${names.length} players`}?
+                </div>
+
+                {/* Description */}
+                <div style={{ fontSize: 12, color: B.g600, fontFamily: F, textAlign: 'center', lineHeight: 1.6, marginBottom: 20 }}>
+                    {isDelete
+                        ? 'All assessment data, competition grades, goals, and journal entries will be permanently deleted. This cannot be undone.'
+                        : 'Their profile will be hidden from the active roster but all data is preserved. You can restore them from the Archived tab.'}
+                </div>
+
+                {/* Buttons */}
+                <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={onCancel}
+                        style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: `1px solid ${B.g200}`, background: B.w, color: B.g600, fontSize: 13, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                        Cancel
+                    </button>
+                    <button onClick={onConfirm}
+                        style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: 'none', background: color, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: 'pointer' }}>
+                        {isDelete ? 'Delete Permanently' : 'Archive'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+// ── Info row helper (module-level) ──
+const InfoRow = React.memo(({ label, value }) => {
+    if (!value) return null;
+    return (
+        <div style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: `1px solid ${B.g100}` }}>
+            <div style={{ width: 100, fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, flexShrink: 0 }}>{label}</div>
+            <div style={{ fontSize: 11, color: B.nvD, fontFamily: F, wordBreak: 'break-word' }}>{value}</div>
+        </div>
+    );
+});
 
 export default function AdminProfiles() {
     const [profiles, setProfiles] = useState([]);
@@ -19,9 +73,9 @@ export default function AdminProfiles() {
     const [expandedId, setExpandedId] = useState(null);
     const [editingId, setEditingId] = useState(null);
     const [editData, setEditData] = useState({});
-    const [selectedIds, setSelectedIds] = useState(new Set());
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState(null);
+    const [confirmAction, setConfirmAction] = useState(null);
 
     const showFeedback = (type, text) => {
         setFeedback({ type, text });
@@ -111,7 +165,6 @@ export default function AdminProfiles() {
     const handleSaveEdit = async (profile) => {
         setSaving(true);
         try {
-            // Update cohort table
             if (profile.cohortId) {
                 await updateCohortPlayer(profile.cohortId, {
                     player_name: editData.name, club: editData.club,
@@ -119,7 +172,6 @@ export default function AdminProfiles() {
                     player_role: editData.playerRole,
                 });
             }
-            // Update DNA player if linked
             if (profile.dnaId) {
                 await updatePlayer(profile.dnaId, {
                     name: editData.name, club: editData.club,
@@ -136,14 +188,19 @@ export default function AdminProfiles() {
         setSaving(false);
     };
 
-    const handleArchive = async (profile) => {
-        if (profile.dnaId) {
-            try {
-                await archivePlayer(profile.dnaId);
-                showFeedback('ok', `${profile.name} archived`);
-                loadData();
-            } catch (err) { showFeedback('err', 'Archive failed'); }
-        }
+    const requestArchive = (profile) => {
+        setConfirmAction({
+            type: 'archive', names: [profile.name],
+            onConfirm: async () => {
+                setConfirmAction(null);
+                if (!profile.dnaId) return;
+                try {
+                    await archivePlayer(profile.dnaId);
+                    showFeedback('ok', `${profile.name} archived`);
+                    loadData();
+                } catch (err) { showFeedback('err', 'Archive failed'); }
+            },
+        });
     };
 
     const handleRestore = async (profile) => {
@@ -156,51 +213,21 @@ export default function AdminProfiles() {
         }
     };
 
-    const handleDelete = async (profile) => {
+    const requestDelete = (profile) => {
         if (!profile.dnaId) return;
-        if (!window.confirm(`Permanently delete ${profile.name} and all their data? This cannot be undone.`)) return;
-        try {
-            await deletePlayer(profile.dnaId);
-            showFeedback('ok', `${profile.name} deleted`);
-            loadData();
-        } catch (err) { showFeedback('err', 'Delete failed'); }
-    };
-
-    const toggleSelect = (id) => {
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id); else next.add(id);
-            return next;
+        setConfirmAction({
+            type: 'delete', names: [profile.name],
+            onConfirm: async () => {
+                setConfirmAction(null);
+                try {
+                    await deletePlayer(profile.dnaId);
+                    showFeedback('ok', `${profile.name} deleted`);
+                    setEditingId(null);
+                    setExpandedId(null);
+                    loadData();
+                } catch (err) { showFeedback('err', 'Delete failed'); }
+            },
         });
-    };
-
-    const selectAll = () => {
-        const visible = filtered.map(p => p.id);
-        if (selectedIds.size === visible.length) setSelectedIds(new Set());
-        else setSelectedIds(new Set(visible));
-    };
-
-    const handleBulkArchive = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to archive'); return; }
-        try {
-            await bulkArchivePlayers(dnaIds);
-            showFeedback('ok', `${dnaIds.length} players archived`);
-            setSelectedIds(new Set());
-            loadData();
-        } catch (err) { showFeedback('err', 'Bulk archive failed'); }
-    };
-
-    const handleBulkDelete = async () => {
-        const dnaIds = filtered.filter(p => selectedIds.has(p.id) && p.dnaId).map(p => p.dnaId);
-        if (dnaIds.length === 0) { showFeedback('err', 'No DNA profiles to delete'); return; }
-        if (!window.confirm(`Permanently delete ${dnaIds.length} players? This cannot be undone.`)) return;
-        try {
-            await bulkDeletePlayers(dnaIds);
-            showFeedback('ok', `${dnaIds.length} players deleted`);
-            setSelectedIds(new Set());
-            loadData();
-        } catch (err) { showFeedback('err', 'Bulk delete failed'); }
     };
 
     // ── Render ──
@@ -216,18 +243,11 @@ export default function AdminProfiles() {
 
     const parseSessions = (s) => s ? s.split(' | ').map(x => x.trim()).filter(Boolean) : [];
 
-    const InfoRow = ({ label, value }) => {
-        if (!value) return null;
-        return (
-            <div style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: `1px solid ${B.g100}` }}>
-                <div style={{ width: 100, fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, flexShrink: 0 }}>{label}</div>
-                <div style={{ fontSize: 11, color: B.nvD, fontFamily: F, wordBreak: 'break-word' }}>{value}</div>
-            </div>
-        );
-    };
-
     return (
         <div style={{ padding: 12, ...getDkWrap() }}>
+            {/* Confirm modal */}
+            <ConfirmModal action={confirmAction} onConfirm={() => confirmAction?.onConfirm?.()} onCancel={() => setConfirmAction(null)} />
+
             {/* Feedback toast */}
             {feedback && (
                 <div style={{ padding: '10px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, fontFamily: F, marginBottom: 8, background: feedback.type === 'ok' ? `${B.grn}15` : '#fee2e2', color: feedback.type === 'ok' ? B.grn : '#dc2626', border: `1px solid ${feedback.type === 'ok' ? `${B.grn}30` : '#fca5a5'}` }}>
@@ -238,52 +258,35 @@ export default function AdminProfiles() {
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
                 {TABS.map(t => (
-                    <button key={t.id} onClick={() => { setTab(t.id); setSelectedIds(new Set()); }}
+                    <button key={t.id} onClick={() => setTab(t.id)}
                         style={{ padding: '8px 16px', borderRadius: 8, border: tab === t.id ? `1.5px solid ${B.bl}` : `1px solid ${B.g200}`, background: tab === t.id ? `${B.bl}10` : B.w, color: tab === t.id ? B.bl : B.g600, fontSize: 11, fontWeight: tab === t.id ? 800 : 600, fontFamily: F, cursor: 'pointer' }}>
                         {t.label} ({t.id === 'active' ? profiles.length : archivedProfiles.length})
                     </button>
                 ))}
             </div>
 
-            {/* Search + bulk actions */}
+            {/* Search */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, suburb, club..."
                     style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none' }} />
             </div>
 
-            {/* Bulk action bar */}
-            {selectedIds.size > 0 && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8, padding: '8px 12px', background: `${B.bl}08`, borderRadius: 8, border: `1px solid ${B.bl}30`, alignItems: 'center' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: B.bl, fontFamily: F, flex: 1 }}>{selectedIds.size} selected</div>
-                    <button onClick={handleBulkArchive} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${B.amb}`, background: `${B.amb}10`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
-                    <button onClick={handleBulkDelete} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${B.red}`, background: `${B.red}10`, color: B.red, cursor: 'pointer', fontFamily: F }}>Delete</button>
-                    <button onClick={() => setSelectedIds(new Set())} style={{ fontSize: 10, color: B.g400, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>Clear</button>
-                </div>
-            )}
-
-            {/* Select all */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, padding: '0 4px' }}>
-                <div style={{ fontSize: 10, color: B.g400, fontFamily: F }}>{filtered.length} players</div>
-                <button onClick={selectAll} style={{ fontSize: 9, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F }}>
-                    {selectedIds.size === filtered.length ? 'Deselect all' : 'Select all'}
-                </button>
-            </div>
+            {/* Count */}
+            <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginBottom: 6, padding: '0 4px' }}>{filtered.length} players</div>
 
             {/* Player list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {filtered.map(p => {
                     const isExpanded = expandedId === p.id;
                     const isEditing = editingId === p.id;
-                    const isSelected = selectedIds.has(p.id);
                     const sessions = parseSessions(p.selectedSessions);
 
                     return (
-                        <div key={p.id} style={{ ...sCard, padding: 0, marginBottom: 0, borderLeft: isSelected ? `3px solid ${B.bl}` : undefined }}>
-                            {/* Header row with checkbox */}
-                            <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(p.id)}
-                                    style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
-                                <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
+                        <div key={p.id} style={{ ...sCard, padding: 0, marginBottom: 0 }}>
+                            {/* Header row */}
+                            <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+                                onClick={() => setExpandedId(isExpanded ? null : p.id)}>
+                                <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F }}>{p.name}</div>
                                         {p.hasDNA && <span style={{ fontSize: 7, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: `${B.grn}15`, color: B.grn }}>DNA</span>}
@@ -294,21 +297,7 @@ export default function AdminProfiles() {
                                         {[p.age ? `${p.age}yo` : null, p.gender, p.suburb, p.club].filter(Boolean).join(' · ')}
                                     </div>
                                 </div>
-                                {/* Quick action buttons */}
-                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                    <button onClick={(e) => { e.stopPropagation(); handleEdit(p); setExpandedId(p.id); }}
-                                        style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.bl}30`, background: `${B.bl}08`, color: B.bl, cursor: 'pointer', fontFamily: F }}>Edit</button>
-                                    {tab === 'active' && p.dnaId && (
-                                        <button onClick={(e) => { e.stopPropagation(); handleArchive(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.amb}30`, background: `${B.amb}08`, color: B.amb, cursor: 'pointer', fontFamily: F }}>Archive</button>
-                                    )}
-                                    {tab === 'archived' && (
-                                        <button onClick={(e) => { e.stopPropagation(); handleRestore(p); }}
-                                            style={{ fontSize: 9, fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: `1px solid ${B.grn}30`, background: `${B.grn}08`, color: B.grn, cursor: 'pointer', fontFamily: F }}>Restore</button>
-                                    )}
-                                </div>
-                                <div onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                                    style={{ fontSize: 10, color: B.g400, cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</div>
+                                <div style={{ fontSize: 10, color: B.g400, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▼</div>
                             </div>
 
                             {/* Expanded: edit mode or view mode */}
@@ -344,7 +333,8 @@ export default function AdminProfiles() {
                                                 <input value={editData.playerRole || ''} onChange={e => setEditData(prev => ({ ...prev, playerRole: e.target.value }))}
                                                     style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none', boxSizing: 'border-box' }} />
                                             </div>
-                                            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                                            {/* Action buttons */}
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                                                 <button onClick={() => handleSaveEdit(p)} disabled={saving}
                                                     style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: B.bl, color: B.w, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
                                                     {saving ? 'Saving...' : 'Save Changes'}
@@ -353,10 +343,19 @@ export default function AdminProfiles() {
                                                     style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, background: B.w, color: B.g600, fontSize: 11, fontFamily: F, cursor: 'pointer' }}>
                                                     Cancel
                                                 </button>
+                                            </div>
+                                            {/* Destructive actions — separated visually */}
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: `1px dashed ${B.g200}` }}>
+                                                {tab === 'active' && p.dnaId && (
+                                                    <button onClick={() => requestArchive(p)}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.amb}`, background: `${B.amb}08`, color: B.amb, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Archive Player
+                                                    </button>
+                                                )}
                                                 {p.dnaId && (
-                                                    <button onClick={() => handleDelete(p)}
-                                                        style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
-                                                        Delete
+                                                    <button onClick={() => requestDelete(p)}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Delete Player
                                                     </button>
                                                 )}
                                             </div>
@@ -407,6 +406,32 @@ export default function AdminProfiles() {
                                             <InfoRow label="Payment" value={p.paymentStatus} />
                                             <InfoRow label="Plan" value={p.paymentOption} />
                                             <InfoRow label="Source" value={p.source} />
+
+                                            {/* Action buttons at bottom of view mode */}
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: `1px solid ${B.g100}` }}>
+                                                <button onClick={() => { handleEdit(p); }}
+                                                    style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.bl}`, background: `${B.bl}08`, color: B.bl, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                    Edit
+                                                </button>
+                                                {tab === 'active' && p.dnaId && (
+                                                    <button onClick={() => requestArchive(p)}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.amb}`, background: `${B.amb}08`, color: B.amb, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Archive
+                                                    </button>
+                                                )}
+                                                {tab === 'archived' && (
+                                                    <button onClick={() => handleRestore(p)}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${B.grn}`, background: `${B.grn}08`, color: B.grn, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Restore
+                                                    </button>
+                                                )}
+                                                {p.dnaId && (
+                                                    <button onClick={() => requestDelete(p)}
+                                                        style={{ padding: '10px', borderRadius: 8, border: `1px solid ${B.red}`, background: `${B.red}08`, color: B.red, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                                                        Delete
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
