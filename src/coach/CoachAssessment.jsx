@@ -10,7 +10,7 @@ import { useEngine } from "../context/EngineContext";
 import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
-import { loadPlayersFromDB, saveAssessmentToDB } from "../db/playerDb";
+import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile } from "../db/playerDb";
 import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
 import { generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
@@ -176,6 +176,20 @@ export default function CoachAssessment() {
     const retryCount = useRef(0);
 
     const goTop = () => window.scrollTo(0, 0);
+
+    // ── Reopen player profile (admin/coach) ──
+    const handleReopenProfile = async (e, playerId, playerName) => {
+        e.stopPropagation(); // Don't trigger card click-through
+        if (!confirm(`Reopen ${playerName}'s profile? They'll be able to edit their onboarding data next time they log in.`)) return;
+        const result = await reopenPlayerProfile(playerId);
+        if (result.success) {
+            alert(`${playerName}'s profile has been reopened.`);
+            refreshPlayers(); // Remove them from the submitted roster
+        } else {
+            alert(`Failed to reopen profile: ${result.error}`);
+        }
+    };
+
     const btnSty = (ok, full) => ({ padding: full ? "14px 20px" : "8px 16px", borderRadius: 8, border: "none", background: ok ? `linear-gradient(135deg,${B.bl},${B.pk})` : B.g200, color: ok ? B.w : B.g400, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: ok ? "pointer" : "default", letterSpacing: .5, textTransform: "uppercase", width: full ? "100%" : "auto", marginTop: 6 });
     const backBtn = { marginTop: 8, padding: "10px 16px", border: `1px solid ${B.g200}`, borderRadius: 6, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F, width: "100%" };
 
@@ -342,7 +356,10 @@ export default function CoachAssessment() {
                                 </div>
                             </div>
                             <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 1 }}>{a}yo • {br} • {ro?.sh || "?"} • {p.club}</div>
-                            <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{p.grades?.length || 0} competition level(s) • {hasCd ? "Coach assessed" : hasSelf ? "Self-assessed" : "Awaiting"}{dn?.provisional && hasSelf ? " (provisional)" : ""}</div>
+                            <div style={{ fontSize: 9, color: B.g400, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                <span>{p.grades?.length || 0} competition level(s) • {hasCd ? "Coach assessed" : hasSelf ? "Self-assessed" : "Awaiting"}{dn?.provisional && hasSelf ? " (provisional)" : ""}</span>
+                                {isAdmin && <button onClick={(e) => handleReopenProfile(e, p.id, p.name)} style={{ padding: "2px 8px", borderRadius: 4, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 8, fontWeight: 700, color: B.g400, cursor: "pointer", fontFamily: F, textTransform: "uppercase", letterSpacing: .3 }}>Reopen</button>}
+                            </div>
                         </div>
                     </div>);
                 })}
