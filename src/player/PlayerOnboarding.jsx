@@ -235,6 +235,33 @@ export default function PlayerOnboarding() {
         }
     };
 
+    // ── Session keepalive (every 15 min) + periodic auto-save (every 60s) ──
+    // Prevents mobile users losing progress when Supabase token expires mid-form.
+    // Keepalive refreshes the login session; auto-save writes the draft to database.
+    useEffect(() => {
+        if (!session?.user?.id || pStep < 1 || pStep >= 7) return;
+
+        // Auto-save every 60 seconds (only if there are unsaved changes)
+        const autoSaveTimer = setInterval(() => {
+            const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
+            if (hasChanges && !saving) {
+                saveDraft();
+            }
+        }, 60_000);
+
+        // Keep login session alive every 15 minutes
+        const keepAliveTimer = setInterval(() => {
+            supabase.auth.refreshSession().catch(err =>
+                console.warn('Session keepalive failed:', err.message)
+            );
+        }, 15 * 60_000);
+
+        return () => {
+            clearInterval(autoSaveTimer);
+            clearInterval(keepAliveTimer);
+        };
+    }, [pStep, session?.user?.id]);
+
     // ── Warn player if they try to close with unsaved changes ──
     useEffect(() => {
         const handleUnload = (e) => {
