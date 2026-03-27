@@ -10,9 +10,9 @@ import { useEngine } from "../context/EngineContext";
 import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
-import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile } from "../db/playerDb";
+import { loadPlayersFromDB, saveAssessmentToDB, savePlayerScores, reopenPlayerProfile } from "../db/playerDb";
 import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
-import { generateDNAReport } from "../supabaseClient";
+import { supabase, generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
 
@@ -578,6 +578,17 @@ export default function CoachAssessment() {
                         saveStatusHook.setSaved();
                         retryCount.current = 0;
                         try { localStorage.removeItem(`rra_draft_${sp.id}`); } catch { }
+                        // ── Save calculated scores to player_scores table ──
+                        try {
+                            const latestCd = pendingCdRef.current;
+                            const ccmR = calcCCM(sp.grades, sp.dob, compTiers, engineConst);
+                            const dn = calcPDI({ ...latestCd, _dob: sp.dob }, sp.self_ratings, sp.role, ccmR, dbWeights, engineConst, sp.grades, {}, sp.topBat, sp.topBowl, compTiers);
+                            const cohortPct = calcCohortPercentile(dn.pdi, players, compTiers, dbWeights, engineConst);
+                            const userId = (await supabase.auth.getSession())?.data?.session?.user?.id || null;
+                            await savePlayerScores(sp.id, dn, ccmR, cohortPct, userId);
+                        } catch (scoreErr) {
+                            console.warn('Score save failed (non-blocking):', scoreErr.message);
+                        }
                     } catch (err) {
                         retryCount.current++;
                         if (retryCount.current <= 3) {

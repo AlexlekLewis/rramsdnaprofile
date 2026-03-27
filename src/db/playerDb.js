@@ -380,6 +380,69 @@ export async function saveAssessmentToDB(playerId, cd) {
     }
 }
 
+// ═══ PLAYER SCORES — PERSISTENT SCOREBOARD ═══
+// Saves calculated DNA scores to player_scores table after each assessment.
+// This is the "scoreboard on the wall" — always reflects the latest calculation.
+
+export async function savePlayerScores(playerId, engineResult, ccmResult, cohortPercentile, calculatedBy) {
+    if (!playerId || !engineResult) return;
+    try {
+        // Build a clean domain_scores array (strip UI-only fields like colors)
+        const domainScores = (engineResult.domains || []).map(d => ({
+            key: d.k,
+            label: d.l,
+            css: Math.round((d.css || 0) * 100) / 100,
+            raw: Math.round((d.raw || 0) * 100) / 100,
+            rated: d.r || 0,
+            total: d.t || 0,
+            weight: d.wt || 0,
+            s100: Math.round((d.s100 || 0) * 10) / 10,
+        }));
+
+        const row = {
+            player_id: playerId,
+            pdi: engineResult.pdi || 0,
+            pdi_pct: engineResult.pdiPct || 0,
+            grade: engineResult.g || '—',
+            domain_scores: domainScores,
+            ccm: ccmResult?.ccm || 0,
+            cti: ccmResult?.cti || 0,
+            sagi: engineResult.sagi,
+            sagi_label: engineResult.sagiLabel || '—',
+            cohort_percentile: cohortPercentile || 50,
+            completion_pct: engineResult.cp || 0,
+            trajectory: engineResult.trajectory || false,
+            provisional: engineResult.provisional || false,
+            calculated_at: new Date().toISOString(),
+            calculated_by: calculatedBy || null,
+        };
+
+        const { error } = await supabase
+            .from('player_scores')
+            .upsert(row, { onConflict: 'player_id' });
+
+        if (error) {
+            console.warn('Player score save failed (non-blocking):', error.message);
+        }
+    } catch (e) {
+        // Score save failure should never block the assessment save
+        console.warn('Player score save error (non-blocking):', e.message);
+    }
+}
+
+// ═══ LOAD PLAYER SCORES (for squad assignment, comparison, rankings) ═══
+export async function loadPlayerScores() {
+    const { data, error } = await supabase
+        .from('player_scores')
+        .select('*')
+        .order('pdi', { ascending: false });
+    if (error) {
+        console.error('Failed to load player scores:', error.message);
+        return [];
+    }
+    return data || [];
+}
+
 // ═══ PLAYER-FACING ASSESSMENT LOADER (DNA VIEW) ═══
 // Returns only player-safe fields — NO raw scores, PDI, SAGI, CCM, or domain percentages
 
