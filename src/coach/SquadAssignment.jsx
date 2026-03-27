@@ -6,8 +6,8 @@ import { supabase } from "../supabaseClient";
 import { autoAssignSquads, getSquadSummary, parseSessionPrefs, WEEKDAY_SLOTS, WEEKEND_BLOCKS } from "../engine/squadEngine";
 import { loadSquadGroups, createSquadGroup, allocatePlayerToSquad } from "../db/adminDb";
 import { useEngine } from "../context/EngineContext";
-import { calcCCM, calcStatDomain } from "../engine/ratingEngine";
-import { loadPlayersFromDB } from "../db/playerDb";
+import { getAge, calcCCM, calcStatDomain } from "../engine/ratingEngine";
+import { loadPlayersFromDB, loadPlayerScores } from "../db/playerDb";
 
 const ROLE_COLORS = { pace: B.bl, spin: B.prp, keeper: B.org, batter: B.pk, allrounder: '#14B8A6' };
 
@@ -28,11 +28,15 @@ export default function SquadAssignment() {
                 // 1. DNA profiles (full data incl. grades, assessments, self_ratings)
                 // 2. Cohort data (suburb, session prefs, parent emails)
                 // 3. Application data (suburb, history, bio fallbacks)
-                const [dnaPlayers, { data: cohortData }, { data: appData }] = await Promise.all([
+                const [dnaPlayers, scores, { data: cohortData }, { data: appData }] = await Promise.all([
                     loadPlayersFromDB(),
+                    loadPlayerScores(),
                     supabase.from('official_cohort_2026').select('*'),
                     supabase.from('applications').select('*'),
                 ]);
+                // Build scores lookup by player_id for fast access
+                const scoresByPlayer = {};
+                (scores || []).forEach(s => { scoresByPlayer[s.player_id] = s; });
 
                 // Build enrichment lookups
                 const cohortByName = {};
@@ -51,64 +55,50 @@ export default function SquadAssignment() {
                     const c = cohortByName[nameKey] || {};
                     const a = appsByName[nameKey] || {};
 
-                    // Compute competition context from grades
-                    const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
+                    // Use stored scores from player_scores table (consistent with dashboard PDI)
+                    const sc = scoresByPlayer[p.id];
                     const hasCd = Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
 
-                    // Squad ranking uses OBJECTIVE data only:
-                    // 1. Season stats scored against tier-relative benchmarks
-                    // 2. Peak performances scored against their tier
-                    // 3. ARM multiplier (younger playing up = boosted)
-                    // Self-ratings are excluded — too subjective for squad allocation
-                    const cti = ccmR?.cti || 0;
-                    const arm = ccmR?.arm || 1;
-                    const playerAge = c.age || a.age || null;
-                    const statResult = calcStatDomain(p.grades, p.role, cti, arm, playerAge, {}, p.topBat, p.topBowl, compTiers);
-                    const statScore = statResult?.css || 0;
-
-                    // Coach assessment average (if available — objective, verified data)
-                    let coachScore = 0;
-                    if (hasCd) {
-                        const coachVals = Object.entries(p.cd)
-                            .filter(([k, v]) => (k.startsWith('t1_') || k.startsWith('t2_') || k.startsWith('iq_') || k.startsWith('mn_') || k.startsWith('ph_') || k.startsWith('fld_')) && v > 0)
-                            .map(([, v]) => v);
-                        if (coachVals.length > 0) {
-                            coachScore = coachVals.reduce((s, v) => s + v, 0) / coachVals.length;
-                        }
-                    }
-
-                    // Final ability score for squad engine:
-                    // If coach assessed: blend coach (60%) + stats (40%)
-                    // If stats only: use stat score
-                    // If neither: score = 0 (unranked, placed by session preference only)
+                    // Ability score: use stored PDI if available, fall back to live calc
                     let abilityScore = 0;
-                    if (coachScore > 0 && statScore > 0) {
-                        abilityScore = coachScore * 0.60 + statScore * 0.40;
-                    } else if (coachScore > 0) {
-                        abilityScore = coachScore;
-                    } else if (statScore > 0) {
-                        abilityScore = statScore;
+                    let ccmRaw = 0;
+                    let ccmCode = null;
+                    if (sc && sc.pdi > 0) {
+                        // Stored score — consistent with dashboard and report card
+                        abilityScore = sc.pdi;
+                        ccmRaw = sc.ccm || 0;
+                    } else {
+                        // No stored score yet — fall back to stat-only calculation
+                        const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
+                        ccmRaw = ccmR?.ccm || 0;
+                        ccmCode = ccmR?.code || null;
+                        const statResult = calcStatDomain(p.grades, p.role, ccmR?.cti || 0, ccmR?.arm || 1, getAge(p.dob), {}, p.topBat, p.topBowl, compTiers);
+                        abilityScore = statResult?.css || 0;
                     }
+
+                    // Age always from DOB (players table = source of truth)
+                    const playerAge = getAge(p.dob);
 
                     return {
                         id: p.id,
                         name: p.name,
-                        dob: p.dob || c.dob || a.dob,
-                        age: c.age || a.age,
+                        dob: p.dob,
+                        age: playerAge,
                         gender: p.gender || c.gender,
                         suburb: c.suburb || a.suburb,
                         club: p.club || c.club || a.club,
-                        role: p.role || c.player_role,
+                        role: p.role,
                         playerRole: c.player_role,
                         bowlingType: p.bowl,
                         selectedSessions: c.selected_sessions,
-                        // Ability score drives squad ranking (objective data only)
+                        // Ability score from stored PDI (consistent across all views)
                         ccm: abilityScore,
                         abilityScore,
-                        statScore,
-                        coachScore,
-                        ccmRaw: ccmR?.ccm || 0,
-                        ccmCode: ccmR?.code || null,
+                        pdi: sc?.pdi || 0,
+                        grade: sc?.grade || '—',
+                        cohortPercentile: sc?.cohort_percentile || null,
+                        ccmRaw,
+                        ccmCode,
                         history: c.history || a.history,
                         bio: c.bio || a.bio,
                         dnaId: p.id,
