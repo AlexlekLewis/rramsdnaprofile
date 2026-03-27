@@ -1,12 +1,12 @@
 // ═══ ADMIN DASHBOARD — Cohort Overview, Rankings, Engagement, Squads ═══
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useEngine } from "../context/EngineContext";
+
 import { B, F, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES } from "../data/skillItems";
-import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile } from "../engine/ratingEngine";
-import { loadPlayersFromDB } from "../db/playerDb";
-import { loadSquadGroups, createSquadGroup, updateSquadGroup, deleteSquadGroup, allocatePlayerToSquad, removePlayerFromSquad, loadSquadAllocations, loadProgramMembers, loadMemberEngagement } from "../db/adminDb";
+import { getAge, getBracket } from "../engine/ratingEngine";
+import { loadPlayersFromDB, loadPlayerScores } from "../db/playerDb";
+import { loadSquadGroups, loadSquadAllocations, loadProgramMembers, loadMemberEngagement } from "../db/adminDb";
 import { loadJournalHistory } from "../db/journalDb";
 import { Hdr, SecH } from "../shared/FormComponents";
 
@@ -35,16 +35,15 @@ const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'rankings', label: 'Rankings' },
     { id: 'engagement', label: 'Engagement' },
-    { id: 'squads', label: 'Squads' },
     { id: 'reports', label: 'Reports' },
 ];
 
 export default function AdminDashboard({ onBack }) {
     const { session, isAdmin } = useAuth();
-    const { compTiers, dbWeights, engineConst } = useEngine();
 
     const [tab, setTab] = useState('overview');
     const [players, setPlayers] = useState([]);
+    const [scores, setScores] = useState([]);
     const [squads, setSquads] = useState([]);
     const [allocations, setAllocations] = useState([]);
     const [engagement, setEngagement] = useState([]);
@@ -59,19 +58,19 @@ export default function AdminDashboard({ onBack }) {
     const [filterAssessed, setFilterAssessed] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Squad creation
-    const [newSquadName, setNewSquadName] = useState('');
 
     const refreshData = useCallback(async () => {
         setLoading(true);
         try {
-            const [ps, sq, alloc, eng] = await Promise.all([
+            const [ps, sc, sq, alloc, eng] = await Promise.all([
                 loadPlayersFromDB(),
+                loadPlayerScores(),
                 loadSquadGroups(),
                 loadSquadAllocations(),
                 loadMemberEngagement(),
             ]);
             setPlayers(ps);
+            setScores(sc || []);
             setSquads(sq || []);
             setAllocations(alloc || []);
             setEngagement(eng || []);
@@ -83,24 +82,32 @@ export default function AdminDashboard({ onBack }) {
 
     useEffect(() => { refreshData(); }, [refreshData]);
 
-    // Compute PDI for all players
+    // Build enriched players using stored scores from player_scores table
+    const scoresByPlayer = useMemo(() => {
+        const map = {};
+        (scores || []).forEach(s => { map[s.player_id] = s; });
+        return map;
+    }, [scores]);
+
     const enrichedPlayers = useMemo(() => {
         return players.filter(p => p.submitted).map(p => {
             const hasCd = Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
-            const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
+            const sc = scoresByPlayer[p.id];
+            // Build dn-compatible object from stored scores
             let dn = null;
-            if (hasCd || Object.keys(p.self_ratings || {}).some(k => k.startsWith('t1_')) || p.grades?.length > 0) {
-                try {
-                    dn = calcPDI({ ...p.cd, _dob: p.dob }, p.self_ratings, p.role, ccmR, dbWeights, engineConst, p.grades, {}, p.topBat, p.topBowl, compTiers);
-                } catch (e) { /* skip */ }
+            if (sc && sc.pdi > 0) {
+                // Convert domain_scores array to keyed object for domain averages
+                const domainMap = {};
+                (sc.domain_scores || []).forEach(d => { domainMap[d.key] = d.css || 0; });
+                dn = { overall: sc.pdi, pdiPct: sc.pdi_pct, g: sc.grade, domains: domainMap, sagi: sc.sagi, sagiLabel: sc.sagi_label };
             }
             const age = getAge(p.dob);
             const bracket = getBracket(p.dob);
             const roleObj = ROLES.find(r => r.id === p.role);
             const squadAlloc = allocations.find(a => a.player_id === p.id);
-            return { ...p, dn, age, bracket, roleLabel: roleObj?.label || p.role, ccm: ccmR?.ccm, assessed: hasCd, squadId: squadAlloc?.squad_id || null };
+            return { ...p, dn, age, bracket, roleLabel: roleObj?.label || p.role, ccm: sc?.ccm || 0, assessed: hasCd, squadId: squadAlloc?.squad_id || null };
         });
-    }, [players, compTiers, dbWeights, engineConst, allocations]);
+    }, [players, scoresByPlayer, allocations]);
 
     // Filtered + sorted rankings
     const rankedPlayers = useMemo(() => {
@@ -150,35 +157,6 @@ export default function AdminDashboard({ onBack }) {
             XLSX.utils.book_append_sheet(wb, ws, 'Rankings');
             XLSX.writeFile(wb, `RRAM_Rankings_${new Date().toISOString().split('T')[0]}.xlsx`);
         } catch (e) { console.error('Export failed:', e); }
-    };
-
-    // Squad management
-    const handleCreateSquad = async () => {
-        if (!newSquadName.trim()) return;
-        try {
-            const sq = await createSquadGroup(newSquadName.trim(), '', 12);
-            setSquads([...squads, sq]);
-            setNewSquadName('');
-        } catch (e) { console.error(e); }
-    };
-
-    const handleAssignPlayer = async (playerId, squadId) => {
-        try {
-            if (squadId) {
-                await allocatePlayerToSquad(squadId, playerId, session?.user?.id);
-                setAllocations(prev => [...prev.filter(a => a.player_id !== playerId), { player_id: playerId, squad_id: squadId }]);
-            } else {
-                await removePlayerFromSquad(playerId);
-                setAllocations(prev => prev.filter(a => a.player_id !== playerId));
-            }
-        } catch (e) { console.error(e); }
-    };
-
-    const handleDeleteSquad = async (id) => {
-        try {
-            await deleteSquadGroup(id);
-            setSquads(prev => prev.filter(s => s.id !== id));
-        } catch (e) { console.error(e); }
     };
 
     if (loading) return (
@@ -417,90 +395,6 @@ export default function AdminDashboard({ onBack }) {
                 )}
 
                 {/* ═══ 3e: SQUAD MANAGEMENT ═══ */}
-                {tab === 'squads' && (
-                    <div>
-                        <SecH title="Squad Management" sub="Create squads and assign players" />
-
-                        {/* Create squad */}
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                            <input value={newSquadName} onChange={e => setNewSquadName(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && handleCreateSquad()}
-                                placeholder="New squad name..."
-                                style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none' }} />
-                            <button onClick={handleCreateSquad}
-                                style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: B.bl, color: B.w, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
-                                Create
-                            </button>
-                        </div>
-
-                        {/* Squad cards */}
-                        {squads.map(sq => {
-                            const members = enrichedPlayers.filter(p => p.squadId === sq.id);
-                            const roleBreakdown = ROLES.map(r => ({ label: r.label, count: members.filter(m => m.role === r.id).length })).filter(r => r.count > 0);
-                            const squadAvgPDI = members.filter(m => m.dn).reduce((s, m) => s + m.dn.overall, 0) / (members.filter(m => m.dn).length || 1);
-
-                            return (
-                                <div key={sq.id} style={{ ...sCard, padding: 16 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                        <div>
-                                            <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>{sq.name}</div>
-                                            <div style={{ fontSize: 10, color: B.g400, fontFamily: F }}>{members.length} players · Avg PDI: {squadAvgPDI.toFixed(2)}</div>
-                                        </div>
-                                        <button onClick={() => handleDeleteSquad(sq.id)} style={{ fontSize: 9, color: B.red, background: `${B.red}10`, border: `1px solid ${B.red}30`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: F }}>Delete</button>
-                                    </div>
-
-                                    {roleBreakdown.length > 0 && (
-                                        <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                                            {roleBreakdown.map(r => (
-                                                <span key={r.label} style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: B.g100, color: B.g600, fontFamily: F }}>{r.count} {r.label}</span>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {members.length === 0 ? (
-                                        <div style={{ fontSize: 11, color: B.g400, fontFamily: F, padding: 8, textAlign: 'center' }}>No players assigned</div>
-                                    ) : (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                            {members.map(m => (
-                                                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, background: B.g50, border: `1px solid ${B.g200}`, fontSize: 10, fontFamily: F }}>
-                                                    <span style={{ fontWeight: 600, color: B.nvD }}>{m.name}</span>
-                                                    <button onClick={() => handleAssignPlayer(m.id, null)} style={{ background: 'none', border: 'none', color: B.red, cursor: 'pointer', fontSize: 10, padding: 0, fontWeight: 700 }}>×</button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-
-                        {/* Unassigned players */}
-                        {(() => {
-                            const unassigned = enrichedPlayers.filter(p => !p.squadId);
-                            if (unassigned.length === 0) return null;
-                            return (
-                                <div style={{ ...sCard, padding: 16 }}>
-                                    <div style={{ fontSize: 12, fontWeight: 800, color: B.g600, fontFamily: F, marginBottom: 10 }}>Unassigned ({unassigned.length})</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        {unassigned.map(p => (
-                                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: B.g50, borderRadius: 6, border: `1px solid ${B.g200}` }}>
-                                                <div>
-                                                    <span style={{ fontSize: 11, fontWeight: 600, color: B.nvD, fontFamily: F }}>{p.name}</span>
-                                                    <span style={{ fontSize: 9, color: B.g400, fontFamily: F, marginLeft: 8 }}>{p.roleLabel}</span>
-                                                </div>
-                                                <select onChange={e => e.target.value && handleAssignPlayer(p.id, e.target.value)} defaultValue=""
-                                                    style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${B.g200}`, fontSize: 9, fontFamily: F }}>
-                                                    <option value="">Assign...</option>
-                                                    {squads.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                                </select>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })()}
-                    </div>
-                )}
-
                 {/* ═══ 3g: REPORT CARDS HUB ═══ */}
                 {tab === 'reports' && (
                     <div>

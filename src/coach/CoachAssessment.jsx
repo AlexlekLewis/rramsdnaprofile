@@ -151,6 +151,7 @@ export default function CoachAssessment() {
     const { compTiers, dbWeights, engineConst } = useEngine();
 
     const [players, setPlayers] = useState([]);
+    const [storedScores, setStoredScores] = useState({});
     const [loading, setLoading] = useState(false);
 
     const [selP, setSelP] = useSessionState('rra_selP', null);
@@ -196,8 +197,11 @@ export default function CoachAssessment() {
     const refreshPlayers = useCallback(async () => {
         setLoading(true);
         try {
-            const ps = await loadPlayersFromDB();
+            const [ps, sc] = await Promise.all([loadPlayersFromDB(), loadPlayerScores()]);
             setPlayers(ps.length ? ps : (import.meta.env.DEV ? MOCK : []));
+            const scoreMap = {};
+            (sc || []).forEach(s => { scoreMap[s.player_id] = s; });
+            setStoredScores(scoreMap);
         } catch (e) {
             console.error(e);
             setPlayers(import.meta.env.DEV ? MOCK : []);
@@ -209,26 +213,40 @@ export default function CoachAssessment() {
 
     const sp = selP ? players.find(p => p.id === selP) : null;
 
-    // Memoize PDI/CCM computation for roster — avoids recalculating on every search/filter/render
+    // Memoize roster scores — uses stored player_scores, falls back to live calculation
     const rosterScores = useMemo(() => {
         const map = {};
         players.filter(p => p.submitted).forEach(p => {
-            const ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
             const hasCd = Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
             const hasSelf = Object.keys(p.self_ratings || {}).some(k => k.startsWith('t1_'));
             const hasData = hasCd || hasSelf || (p.grades?.length > 0);
-            const dn = hasData ? calcPDI({ ...p.cd, _dob: p.dob }, p.self_ratings, p.role, ccmR, dbWeights, engineConst, p.grades, {}, p.topBat, p.topBowl, compTiers) : null;
-            let overallScore = null;
-            if (dn && dn.pdi > 0) {
-                const pathS = dn.pdiPct;
-                const cohortS = calcCohortPercentile(dn.pdi, players, compTiers, dbWeights, engineConst);
-                const ageS = calcAgeScore(ccmR.arm, engineConst);
-                overallScore = Math.round((pathS + cohortS + ageS) / 3);
+            const sc = storedScores[p.id];
+
+            let ccmR, dn, overallScore = null;
+
+            if (sc && sc.pdi > 0) {
+                // Use stored scores — consistent with dashboard and squads
+                ccmR = { ccm: sc.ccm || 0, cti: sc.cti || 0 };
+                dn = { pdi: sc.pdi, pdiPct: sc.pdi_pct || 0, g: sc.grade || '—', gc: sc.grade === 'A' ? '#22C55E' : sc.grade === 'B' ? '#3B82F6' : sc.grade === 'C' ? '#F59E0B' : '#EF4444', sagi: sc.sagi, sagiLabel: sc.sagi_label };
+                overallScore = sc.cohort_percentile || null;
+            } else if (hasData) {
+                // Fall back to live calculation for players without stored scores
+                ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
+                dn = calcPDI({ ...p.cd, _dob: p.dob }, p.self_ratings, p.role, ccmR, dbWeights, engineConst, p.grades, {}, p.topBat, p.topBowl, compTiers);
+                if (dn && dn.pdi > 0) {
+                    const pathS = dn.pdiPct;
+                    const cohortS = calcCohortPercentile(dn.pdi, players, compTiers, dbWeights, engineConst);
+                    const ageS = calcAgeScore(ccmR.arm, engineConst);
+                    overallScore = Math.round((pathS + cohortS + ageS) / 3);
+                }
+            } else {
+                ccmR = calcCCM(p.grades, p.dob, compTiers, engineConst);
             }
+
             map[p.id] = { ccmR, dn, hasCd, hasSelf, hasData, overallScore };
         });
         return map;
-    }, [players, compTiers, dbWeights, engineConst]);
+    }, [players, storedScores, compTiers, dbWeights, engineConst]);
 
     const handleNav = (viewId) => { setCView(viewId); goTop(); };
     const showNavBar = !['assess', 'survey', 'report'].includes(cView);
@@ -867,7 +885,7 @@ export default function CoachAssessment() {
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${nextP ? B.g200 : 'transparent'}`, background: 'transparent', color: nextP ? B.g600 : B.g200, fontSize: 14, cursor: nextP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>→</button>
                     </div>
                     <div style={{ padding: '4px 12px', background: B.g50, borderBottom: `1px solid ${B.g100}`, display: 'flex', justifyContent: 'center' }}>
-                        <button onClick={() => { setCView("list"); setSelP(null); goTop(); }}
+                        <button onClick={() => { refreshPlayers(); setCView("list"); setSelP(null); goTop(); }}
                             style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, textDecoration: 'underline' }}>← Back to Roster</button>
                     </div>
                 </>);
@@ -898,7 +916,7 @@ export default function CoachAssessment() {
                     setReportPlayer(null);
                 }} style={{ padding: isDesktop() ? '8px 14px' : '12px 18px', borderRadius: 6, border: `1px solid ${B.bl}`, background: 'transparent', fontSize: 11, fontWeight: 700, color: B.bl, cursor: 'pointer', fontFamily: F }}>📄 Generate Report</button>}
 
-                {cPage === 3 && <button onClick={() => { setCView("list"); setSelP(null); goTop(); }} style={{ padding: isDesktop() ? "8px 14px" : "12px 18px", borderRadius: 6, border: "none", background: B.grn, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>✓ Done</button>}
+                {cPage === 3 && <button onClick={() => { refreshPlayers(); setCView("list"); setSelP(null); goTop(); }} style={{ padding: isDesktop() ? "8px 14px" : "12px 18px", borderRadius: 6, border: "none", background: B.grn, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>✓ Done</button>}
             </div>
 
             {/* Hidden ReportCard for PDF capture */}
