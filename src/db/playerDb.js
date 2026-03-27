@@ -4,7 +4,8 @@ import { ROLES, VOICE_QS } from '../data/skillItems';
 
 export async function loadPlayersFromDB() {
     // Fetch inactive member auth_user_ids to exclude archived players from all calculations
-    const { data: inactiveMembers } = await supabase.from('program_members').select('auth_user_id').eq('active', false);
+    const { data: inactiveMembers, error: inactiveErr } = await supabase.from('program_members').select('auth_user_id').eq('active', false);
+    if (inactiveErr) console.error('Failed to load inactive members:', inactiveErr.message);
     const inactiveAuthIds = new Set((inactiveMembers || []).map(m => m.auth_user_id).filter(Boolean));
 
     const { data: pRows, error: pErr } = await supabase.from('players').select('*').eq('submitted', true).order('created_at', { ascending: false });
@@ -127,6 +128,14 @@ function buildGradeRows(pd, playerId) {
 }
 
 export async function savePlayerToDB(pd, authUserId, draftId) {
+    // Refresh session before submit — mobile users may have expired tokens after long form fills
+    try {
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        if (refreshData?.session?.user?.id) authUserId = refreshData.session.user.id;
+    } catch (e) {
+        console.warn('Session refresh before submit failed:', e.message);
+    }
+
     const row = { ...buildPlayerRow(pd), submitted: true, onboarding_progress: pd.onboardingProgress || null };
     if (authUserId) row.auth_user_id = authUserId;
 
@@ -134,9 +143,19 @@ export async function savePlayerToDB(pd, authUserId, draftId) {
     if (draftId) {
         // Update existing draft → submitted
         const { data, error: pErr } = await supabase.from('players').update(row).eq('id', draftId).select().single();
-        if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
-        player = data;
-        await supabase.from('competition_grades').delete().eq('player_id', draftId);
+        if (pErr) {
+            // RLS may silently block update if session expired (PGRST116 = 0 rows returned).
+            // Fallback: insert a new row instead of updating the draft.
+            console.warn('Draft update failed, falling back to insert:', pErr.message);
+            const { data: insertData, error: insertErr } = await supabase.from('players').insert(row).select().single();
+            if (insertErr) throw new Error(`Player save failed: ${insertErr.message}`);
+            player = insertData;
+            // Clean up old draft grades (best-effort, don't block submission)
+            supabase.from('competition_grades').delete().eq('player_id', draftId).then(() => {});
+        } else {
+            player = data;
+            await supabase.from('competition_grades').delete().eq('player_id', draftId);
+        }
     } else {
         const { data, error: pErr } = await supabase.from('players').insert(row).select().single();
         if (pErr) throw new Error(`Player save failed: ${pErr.message}`);
@@ -146,7 +165,11 @@ export async function savePlayerToDB(pd, authUserId, draftId) {
     const grades = buildGradeRows(pd, player.id);
     if (grades.length) {
         const { error: gErr } = await supabase.from('competition_grades').insert(grades);
-        if (gErr) console.error('Save grades error (player saved OK):', gErr);
+        if (gErr) {
+            console.error('Save grades error (player saved OK):', gErr);
+            // Throw so the UI can inform the user their grades didn't save
+            throw new Error(`Player saved but competition grades failed: ${gErr.message}`);
+        }
     }
     return player;
 }
@@ -168,16 +191,24 @@ export async function saveDraftToDB(pd, step, authUserId) {
         },
     };
 
-    // Check for existing draft
-    const { data: existing } = await supabase.from('players')
-        .select('id').eq('auth_user_id', authUserId).eq('submitted', false).maybeSingle();
+    // Check for existing draft — use .limit(1) to handle duplicate drafts safely
+    const { data: existingRows } = await supabase.from('players')
+        .select('id').eq('auth_user_id', authUserId).eq('submitted', false).limit(1);
+    const existing = existingRows?.[0] || null;
 
     let player;
     if (existing) {
         const { data, error } = await supabase.from('players').update(row).eq('id', existing.id).select().single();
-        if (error) throw new Error(`Draft update failed: ${error.message}`);
-        player = data;
-        await supabase.from('competition_grades').delete().eq('player_id', player.id);
+        if (error) {
+            // RLS may block update if session token degraded — fall back to insert
+            console.warn('Draft update blocked, falling back to insert:', error.message);
+            const { data: insertData, error: insertErr } = await supabase.from('players').insert(row).select().single();
+            if (insertErr) throw new Error(`Draft save failed: ${insertErr.message}`);
+            player = insertData;
+        } else {
+            player = data;
+            await supabase.from('competition_grades').delete().eq('player_id', player.id);
+        }
     } else {
         const { data, error } = await supabase.from('players').insert(row).select().single();
         if (error) throw new Error(`Draft save failed: ${error.message}`);
@@ -187,7 +218,11 @@ export async function saveDraftToDB(pd, step, authUserId) {
     const grades = buildGradeRows(pd, player.id);
     if (grades.length) {
         const { error: gErr } = await supabase.from('competition_grades').insert(grades);
-        if (gErr) console.error('Draft grade save error:', gErr);
+        if (gErr) {
+            console.error('Draft grade save error:', gErr);
+            // For drafts, warn but don't throw — grades will be re-saved on final submit
+            console.warn('Draft grades failed to save — they will be retried on final submission.');
+        }
     }
     return player;
 }

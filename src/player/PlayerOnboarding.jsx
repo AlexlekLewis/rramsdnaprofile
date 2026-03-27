@@ -637,11 +637,17 @@ export default function PlayerOnboarding() {
                     setSubmitting(true);
                     setSubmitError('');
                     try {
-                        const saved = await savePlayerToDB(pd, session?.user?.id, draftId);
+                        // Refresh session before submit — mobile tokens may have expired during long form fill
+                        let activeUserId = session?.user?.id;
+                        try {
+                            const { data: refreshData } = await supabase.auth.refreshSession();
+                            if (refreshData?.session?.user?.id) activeUserId = refreshData.session.user.id;
+                        } catch (re) { console.warn('Pre-submit session refresh failed:', re.message); }
+                        const saved = await savePlayerToDB(pd, activeUserId, draftId);
                         if (!saved) throw new Error('Save returned no data');
                         // Mark user_profiles.submitted so portal routing works on refresh
-                        if (session?.user?.id) {
-                            const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', session.user.id);
+                        if (activeUserId) {
+                            const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
                             if (upErr) console.warn('user_profiles.submitted update failed:', upErr.message);
                         }
                         try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
@@ -650,7 +656,14 @@ export default function PlayerOnboarding() {
                         setPStep(7);
                     } catch (e) {
                         console.error('Submit error:', e);
-                        setSubmitError('Failed to submit. Please check your connection and try again.');
+                        const msg = e.message || '';
+                        if (msg.includes('permission') || msg.includes('blocked')) {
+                            setSubmitError('Session expired. Please sign out and sign back in, then try again.');
+                        } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+                            setSubmitError('Network error. Please check your connection and try again.');
+                        } else {
+                            setSubmitError('Failed to submit — please try again. If it keeps failing, sign out and sign back in.');
+                        }
                     } finally {
                         setSubmitting(false);
                     }
