@@ -199,16 +199,41 @@ export default function PlayerOnboarding() {
     useEffect(() => { savingRef.current = saving; }, [saving]);
 
     // ── Load saved draft from database on mount ──
+    // CRITICAL: localStorage may have MORE data than the DB if auto-save was broken.
+    // Compare both versions and keep the one with more progress to prevent data loss.
     useEffect(() => {
         if (!session?.user?.id) { setDraftLoading(false); return; }
         let cancelled = false;
         loadDraftFromDB(session.user.id).then(draft => {
             if (cancelled) return;
             if (draft) {
-                setPd(draft.pd);
-                setPStep(draft.step);
-                setDraftId(draft.draftId);
-                lastSavedRef.current = JSON.stringify(draft.pd);
+                // Count non-empty fields in each version to determine which is richer
+                const localPd = pdRef.current; // Current state (from localStorage via useSessionState)
+                const dbPd = draft.pd;
+                const countFields = (obj) => Object.keys(obj).filter(k => {
+                    const v = obj[k];
+                    return v !== null && v !== undefined && v !== '' && k !== 'grades' && !k.startsWith('_');
+                }).length;
+                const localFields = countFields(localPd);
+                const dbFields = countFields(dbPd);
+                const localStep = pStep; // Current step from localStorage
+                const dbStep = draft.step;
+
+                if (localStep > dbStep || (localStep === dbStep && localFields > dbFields + 3)) {
+                    // localStorage is ahead — keep it, save it to DB immediately
+                    console.log(`Draft merge: localStorage ahead (step ${localStep}, ${localFields} fields) vs DB (step ${dbStep}, ${dbFields} fields). Keeping localStorage, syncing to DB.`);
+                    setDraftId(draft.draftId);
+                    lastSavedRef.current = null; // Force auto-save to fire immediately
+                    // Trigger an immediate save of localStorage data to DB
+                    setTimeout(() => saveDraft(localPd, localStep), 500);
+                } else {
+                    // DB is same or ahead — use it (normal path)
+                    console.log(`Draft merge: DB version used (step ${dbStep}, ${dbFields} fields) vs localStorage (step ${localStep}, ${localFields} fields).`);
+                    setPd(dbPd);
+                    setPStep(dbStep);
+                    setDraftId(draft.draftId);
+                    lastSavedRef.current = JSON.stringify(dbPd);
+                }
             }
             setDraftLoading(false);
         }).catch(err => {
