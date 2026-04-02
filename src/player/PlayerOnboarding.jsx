@@ -187,11 +187,16 @@ export default function PlayerOnboarding() {
     const [saving, setSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
     const [draftLoading, setDraftLoading] = useState(!!session?.user?.id);
+    const [draftLoadError, setDraftLoadError] = useState(null);
 
     const stepStartRef = useRef(Date.now());
     const pdRef = useRef(pd);
     const lastSavedRef = useRef(null);
+    const sessionRef = useRef(session);
+    const savingRef = useRef(saving);
     useEffect(() => { pdRef.current = pd; }, [pd]);
+    useEffect(() => { sessionRef.current = session; }, [session]);
+    useEffect(() => { savingRef.current = saving; }, [saving]);
 
     // ── Load saved draft from database on mount ──
     useEffect(() => {
@@ -208,20 +213,42 @@ export default function PlayerOnboarding() {
             setDraftLoading(false);
         }).catch(err => {
             console.error('Load draft error:', err);
-            if (!cancelled) setDraftLoading(false);
+            if (!cancelled) {
+                setDraftLoadError(err.message || 'Could not load your saved progress.');
+                setDraftLoading(false);
+            }
         });
         return () => { cancelled = true; };
     }, []);
 
     // ── Save draft to database ──
     const saveDraft = async (pdOverride, stepOverride) => {
-        if (!session?.user?.id || saving) return;
+        if (savingRef.current) return;
+
+        // If session expired, attempt refresh before giving up
+        let userId = sessionRef.current?.user?.id;
+        if (!userId) {
+            try {
+                const { data: refreshData } = await supabase.auth.refreshSession();
+                userId = refreshData?.session?.user?.id;
+            } catch (e) {
+                console.warn('Session refresh failed during draft save:', e.message);
+            }
+        }
+        if (!userId) {
+            // Session is truly gone — warn the user instead of silently failing
+            setSaveStatus('error');
+            setStepError('Your session has expired. Please sign out and sign back in to save your progress.');
+            setTimeout(() => setSaveStatus(s => s === 'error' ? 'idle' : s), 5000);
+            return;
+        }
+
         setSaving(true);
         setSaveStatus('saving');
         try {
             const toSave = pdOverride || pdRef.current;
             const step = stepOverride != null ? stepOverride : pStep;
-            const saved = await saveDraftToDB(toSave, step, session.user.id);
+            const saved = await saveDraftToDB(toSave, step, userId);
             setDraftId(saved.id);
             lastSavedRef.current = JSON.stringify(toSave);
             setSaveStatus('saved');
@@ -229,13 +256,66 @@ export default function PlayerOnboarding() {
         } catch (e) {
             console.error('Save draft error:', e);
             setSaveStatus('error');
-            setTimeout(() => setSaveStatus(s => s === 'error' ? 'idle' : s), 3000);
+            setStepError(`Auto-save failed: ${e.message?.includes('Auth') ? 'session expired — please sign out and back in' : 'will retry in 30s'}`);
+            setTimeout(() => setSaveStatus(s => s === 'error' ? 'idle' : s), 5000);
         } finally {
             setSaving(false);
         }
     };
 
+    // ── Periodic auto-save: every 30s while user has unsaved changes ──
+    useEffect(() => {
+        if (pStep < 1 || pStep >= 7) return; // Only auto-save during active form steps
+        const interval = setInterval(() => {
+            const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
+            if (hasChanges && !savingRef.current) {
+                saveDraft();
+            }
+        }, 30000);
+        return () => clearInterval(interval);
+    }, [pStep]);
+
+    // ── Session keepalive: refresh token every 10 minutes across ALL onboarding steps ──
+    // Runs on Steps 0–7 (including pre-guide and review) so token doesn't expire
+    // while the user reads instructions or reviews their answers before submit.
+    useEffect(() => {
+        if (pStep < 0 || pStep > 7) return;
+        const keepalive = setInterval(async () => {
+            try {
+                const { error } = await supabase.auth.refreshSession();
+                if (error) console.warn('Session keepalive refresh failed:', error.message);
+            } catch (e) {
+                console.warn('Session keepalive error:', e.message);
+            }
+        }, 10 * 60 * 1000); // 10 minutes (was 20 — tightened for mobile reliability)
+        return () => clearInterval(keepalive);
+    }, [pStep]);
+
+    // ── Mobile tab backgrounding protection ──
+    // Mobile Safari kills background tabs after ~30s. When the tab wakes up,
+    // immediately refresh the session token and trigger a save if needed.
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'visible' && pStep > 0 && pStep < 7) {
+                // Tab just became visible again — refresh token immediately
+                try {
+                    await supabase.auth.refreshSession();
+                } catch (e) {
+                    console.warn('Resume token refresh failed:', e.message);
+                }
+                // Trigger save if there are unsaved changes
+                const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
+                if (hasChanges && !saving) {
+                    saveDraft();
+                }
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [pStep, saving]);
+
     // ── Warn player if they try to close with unsaved changes ──
+    // Uses both beforeunload (desktop) and pagehide (mobile Safari/Chrome)
     useEffect(() => {
         const handleUnload = (e) => {
             if (pStep > 0 && pStep < 7) {
@@ -244,8 +324,22 @@ export default function PlayerOnboarding() {
                 if (hasChanges) { e.preventDefault(); e.returnValue = ''; }
             }
         };
+        const handlePageHide = () => {
+            if (pStep > 0 && pStep < 7) {
+                const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
+                if (hasChanges) {
+                    trackEvent(EVT.SURVEY_ABANDON, { step: pStep, elapsed: Date.now() - stepStartRef.current });
+                    // Force an emergency save — pagehide fires reliably on mobile
+                    saveDraft();
+                }
+            }
+        };
         window.addEventListener('beforeunload', handleUnload);
-        return () => window.removeEventListener('beforeunload', handleUnload);
+        window.addEventListener('pagehide', handlePageHide);
+        return () => {
+            window.removeEventListener('beforeunload', handleUnload);
+            window.removeEventListener('pagehide', handlePageHide);
+        };
     }, [pStep]);
 
     const stpN = ["Profile", "Competition History", "T20 Identity", "Self-Assessment", "Player Voice", "Medical & Goals", "Review"];
@@ -254,8 +348,8 @@ export default function PlayerOnboarding() {
     const cricketAge = getCricketAge(pd.dob);
     const isJunior = cricketAge != null && cricketAge < JUNIOR_AGE_CUTOFF;
     const rid = ROLES.find(r => r.label === pd.role)?.id || 'batter';
-    const hasBowling = ['pace', 'spin', 'allrounder'].includes(rid);
-    const isPace = ['pace', 'allrounder'].includes(rid);
+    const hasBowling = ['pace', 'spin', 'allrounder', 'bowlrounder'].includes(rid);
+    const isPace = ['pace', 'allrounder', 'bowlrounder'].includes(rid);
     const batQs = isJunior ? BAT_QUESTIONS_JR : BAT_QUESTIONS;
     const bwlQs = isJunior ? BWL_QUESTIONS_JR : BWL_QUESTIONS;
 
@@ -289,19 +383,19 @@ export default function PlayerOnboarding() {
             if (!pd.primarySkill) return 'Please select your primary skill';
         }
         // Steps 3-4: soft nudge — show message once, then allow skip on second tap
+        // Step 3 is now MatchUp-based self-assessment (sr_mc_* keys), not the old sr_c_/sr_f_ format
         if (step === 3 && !pd._nudge3) {
-            const confCount = countSelfRatings('sr_c_');
-            const freqCount = countSelfRatings('sr_f_');
-            if (confCount < 3 || freqCount < 3) {
+            const mcCount = countSelfRatings('sr_mc_');
+            if (mcCount < 3) {
                 pu('_nudge3', true);
                 return 'Rate a few skills to help your coaches — or tap Next again to skip';
             }
         }
         if (step === 4 && !pd._nudge4) {
-            const mcCount = countSelfRatings('sr_mc_');
-            if (mcCount < 2) {
+            const voiceCount = Object.keys(pd).filter(k => k.startsWith('v_') && pd[k]?.trim()).length;
+            if (voiceCount < 2) {
                 pu('_nudge4', true);
-                return 'Answer a couple of match-up questions — or tap Next again to skip';
+                return 'Answer a couple of questions in your own words — or tap Next again to skip';
             }
         }
         return null;
@@ -637,20 +731,95 @@ export default function PlayerOnboarding() {
                     setSubmitting(true);
                     setSubmitError('');
                     try {
-                        const saved = await savePlayerToDB(pd, session?.user?.id, draftId);
-                        if (!saved) throw new Error('Save returned no data');
-                        // Mark user_profiles.submitted so portal routing works on refresh
-                        if (session?.user?.id) {
-                            const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', session.user.id);
-                            if (upErr) console.warn('user_profiles.submitted update failed:', upErr.message);
+                        // Refresh session before submit — mobile tokens may have expired during long form fill
+                        let activeUserId = session?.user?.id;
+                        try {
+                            const { data: refreshData } = await supabase.auth.refreshSession();
+                            if (refreshData?.session?.user?.id) activeUserId = refreshData.session.user.id;
+                        } catch (re) { console.warn('Pre-submit session refresh failed:', re.message); }
+
+                        let submitSuccess = false;
+
+                        // Primary path: full client-side save (updates player data + grades)
+                        try {
+                            const saved = await savePlayerToDB(pd, activeUserId, draftId);
+                            if (!saved) throw new Error('Save returned no data');
+                            // Mark user_profiles.submitted so portal routing works on refresh
+                            // CRITICAL: This must succeed — if it fails silently, the player sees
+                            // the success screen but portal routing stays broken (submitted=false).
+                            if (activeUserId) {
+                                const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                if (upErr) {
+                                    console.warn('user_profiles.submitted update failed, retrying:', upErr.message);
+                                    // Retry once after a short delay — transient RLS/network issues
+                                    await new Promise(r => setTimeout(r, 1000));
+                                    const { error: retryErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                    if (retryErr) {
+                                        console.error('user_profiles.submitted retry also failed:', retryErr.message);
+                                        throw new Error('Profile status update failed — please try submitting again.');
+                                    }
+                                }
+                            }
+                            submitSuccess = true;
+                        } catch (primaryErr) {
+                            console.warn('Primary submit failed, trying server-side RPC:', primaryErr.message);
+                            // Fallback: server-side RPC that runs as SECURITY DEFINER (bypasses session/RLS)
+                            // This ensures submit works even when mobile sessions have fully degraded
+                            if (draftId && activeUserId) {
+                                try {
+                                    const { data: rpcResult, error: rpcErr } = await supabase.rpc('submit_player_profile', {
+                                        p_player_id: draftId,
+                                        p_auth_user_id: activeUserId,
+                                    });
+                                    if (rpcErr) throw rpcErr;
+                                    if (rpcResult?.success) {
+                                        console.log('Server-side submit succeeded via RPC');
+                                        // CRITICAL: RPC marks players.submitted=true server-side,
+                                        // but we must ALSO update user_profiles.submitted for portal routing.
+                                        // Without this, the player sees success but gets routed back to onboarding on next login.
+                                        if (activeUserId) {
+                                            try {
+                                                const { error: upErr2 } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                                if (upErr2) {
+                                                    console.warn('user_profiles update after RPC failed, retrying:', upErr2.message);
+                                                    await new Promise(r => setTimeout(r, 1000));
+                                                    await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                                }
+                                            } catch (upRpcErr) {
+                                                console.warn('user_profiles update after RPC error (non-blocking):', upRpcErr.message);
+                                                // Don't throw — the player data IS saved via RPC. Portal routing
+                                                // may be broken until user_profiles syncs, but data is safe.
+                                            }
+                                        }
+                                        submitSuccess = true;
+                                    } else {
+                                        throw new Error(rpcResult?.error || 'RPC returned failure');
+                                    }
+                                } catch (rpcErr) {
+                                    console.error('RPC fallback also failed:', rpcErr);
+                                    throw primaryErr; // re-throw original error for UI messaging
+                                }
+                            } else {
+                                throw primaryErr;
+                            }
                         }
-                        try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
-                        notifySlack('submission', { name: pd.name, club: pd.club, role: pd.role, dob: pd.dob, association: pd.assoc });
-                        lastSavedRef.current = JSON.stringify(pd);
-                        setPStep(7);
+
+                        if (submitSuccess) {
+                            try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
+                            notifySlack('submission', { name: pd.name, club: pd.club, role: pd.role, dob: pd.dob, association: pd.assoc });
+                            lastSavedRef.current = JSON.stringify(pd);
+                            setPStep(7);
+                        }
                     } catch (e) {
                         console.error('Submit error:', e);
-                        setSubmitError('Failed to submit. Please check your connection and try again.');
+                        const msg = e.message || '';
+                        if (msg.includes('permission') || msg.includes('blocked')) {
+                            setSubmitError('Session expired. Please sign out and sign back in, then try again.');
+                        } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+                            setSubmitError('Network error. Please check your connection and try again.');
+                        } else {
+                            setSubmitError('Failed to submit — please try again. If it keeps failing, sign out and sign back in.');
+                        }
                     } finally {
                         setSubmitting(false);
                     }
@@ -678,6 +847,20 @@ export default function PlayerOnboarding() {
     if (draftLoading) return (<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: B.g50 }}>
         <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: B.g600, fontFamily: F }}>Loading your progress...</div>
+        </div>
+    </div>);
+
+    if (draftLoadError) return (<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, background: B.g50 }}>
+        <div style={{ textAlign: 'center', maxWidth: 400, padding: 32 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#DC2626', marginBottom: 12, fontFamily: F }}>Something went wrong</div>
+            <div style={{ fontSize: 14, color: B.g600, marginBottom: 20, fontFamily: F }}>{draftLoadError}</div>
+            <button onClick={() => { setDraftLoadError(null); setDraftLoading(true); loadDraftFromDB(session.user.id).then(draft => { if (draft) { setPd(draft.pd); setPStep(draft.step); setDraftId(draft.draftId); lastSavedRef.current = JSON.stringify(draft.pd); } setDraftLoading(false); }).catch(err => { setDraftLoadError(err.message || 'Still unable to load. Please sign out and sign back in.'); setDraftLoading(false); }); }}
+                style={{ padding: '10px 24px', background: B.navy, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: F }}>
+                Try Again
+            </button>
+            <div style={{ marginTop: 12 }}>
+                <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: B.g500, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', fontFamily: F }}>Sign out and start fresh</button>
+            </div>
         </div>
     </div>);
 

@@ -7,6 +7,7 @@ export const ROLES = [
     { id: "spin", label: "Spin Bowler", sh: "SPIN", dbId: "spin_bowler" },
     { id: "keeper", label: "WK-Batter", sh: "WK", dbId: "wicketkeeper_batter" },
     { id: "allrounder", label: "Batting All-Rounder", sh: "AR", dbId: "batting_allrounder" },
+    { id: "bowlrounder", label: "Bowling All-Rounder", sh: "BAR", dbId: "bowling_allrounder" },
 ];
 
 // ═══ ARCHETYPES v3 — Questionnaire-driven T20 identity system ═══
@@ -45,6 +46,7 @@ export const PH_MAP = {
     keeper: ["Lateral Movement", "Squat Endurance", "Hand-Eye Coordination", "Core Stability", "Aerobic Fitness"],
     batter: ["Explosive Power", "Agility & Running", "Core Balance", "Upper Body Power", "Aerobic Fitness"],
     allrounder: ["Explosive Power", "Bowling Athleticism", "Core Balance", "Aerobic Fitness", "General Movement"],
+    bowlrounder: ["Explosive Power", "Core Stability", "Bowling Athleticism", "Aerobic Recovery", "General Movement"],
 };
 
 // ═══ JUNIOR SELF-ASSESSMENT ITEMS (U14) ═══
@@ -63,6 +65,7 @@ export const PH_MAP_JR = {
     keeper: ["Agility", "Hand-Eye Coordination", "Fitness"],
     batter: ["Speed & Agility", "Power & Strength", "Fitness"],
     allrounder: ["Speed & Power", "Balance", "Fitness"],
+    bowlrounder: ["Speed & Power", "Strength", "Fitness"],
 };
 export const FLD_ITEMS_JR = ["Fielding", "Catching", "Throwing"];
 

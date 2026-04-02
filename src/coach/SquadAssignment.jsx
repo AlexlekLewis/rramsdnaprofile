@@ -9,7 +9,7 @@ import { useEngine } from "../context/EngineContext";
 import { calcCCM, calcStatDomain } from "../engine/ratingEngine";
 import { loadPlayersFromDB } from "../db/playerDb";
 
-const ROLE_COLORS = { pace: B.bl, spin: B.prp, keeper: B.org, batter: B.pk, allrounder: '#14B8A6' };
+const ROLE_COLORS = { pace: B.bl, spin: B.prp, keeper: B.org, batter: B.pk, allrounder: '#14B8A6', bowlrounder: '#0D9488' };
 
 export default function SquadAssignment() {
     const [cohort, setCohort] = useState([]);
