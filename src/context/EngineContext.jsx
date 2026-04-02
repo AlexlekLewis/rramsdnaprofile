@@ -13,6 +13,7 @@ export function EngineProvider({ children }) {
     const [dbWeights, setDbWeights] = useState(null);
     const [engineConst, setEngineConst] = useState(FALLBACK_CONST);
     const [engineLoading, setEngineLoading] = useState(true);
+    const [engineError, setEngineError] = useState(null);
 
     useEffect(() => {
         let mounted = true;
@@ -28,6 +29,12 @@ export function EngineProvider({ children }) {
                 ]);
 
                 if (!mounted) return;
+
+                // Log individual query failures — Supabase doesn't throw, it returns { error }
+                const queries = { tiers: tRes, assocs: aRes, regions: rRes, weights: wRes, constants: cRes, assocComps: acRes };
+                Object.entries(queries).forEach(([name, res]) => {
+                    if (res.error) console.error(`Engine data load failed [${name}]:`, res.error.message);
+                });
 
                 if (tRes.data?.length) setCompTiers(tRes.data);
                 if (aRes.data?.length) setVmcuAssocs(aRes.data);
@@ -60,6 +67,7 @@ export function EngineProvider({ children }) {
                 }
             } catch (e) {
                 console.error('Failed to load engine data:', e);
+                if (mounted) setEngineError(e.message || 'Failed to load engine data');
             } finally {
                 if (mounted) setEngineLoading(false);
             }
@@ -75,7 +83,8 @@ export function EngineProvider({ children }) {
         vmcuAssocs,
         dbWeights,
         engineConst,
-        engineLoading
+        engineLoading,
+        engineError
     };
 
     return (

@@ -61,6 +61,7 @@ export function techItems(r) {
     if (r === "spin") return { pri: SPIN_ITEMS, sec: BAT_ITEMS.slice(0, 6), pL: "Spin Bowling", sL: "Batting" };
     if (r === "keeper") return { pri: KEEP_ITEMS, sec: BAT_ITEMS, pL: "Wicketkeeping", sL: "Batting" };
     if (r === "allrounder") return { pri: BAT_ITEMS.slice(0, 7), sec: ["Stock Ball Control", "Variation Execution", "Bowling to Plans", "Death Execution", "Match-Up Awareness"], pL: "Batting", sL: "Bowling" };
+    if (r === "bowlrounder") return { pri: ["Stock Ball Control", "Variation Execution", "Bowling to Plans", "Death Execution", "Match-Up Awareness", "Line & Length Consistency", "Bouncer / Yorker Mix"], sec: BAT_ITEMS.slice(0, 5), pL: "Bowling", sL: "Batting" };
     return { pri: BAT_ITEMS, sec: ["Ground Fielding", "Catching", "Part-Time Bowling", "Running Between"], pL: "Batting", sL: "Fielding" };
 }
 
@@ -112,6 +113,7 @@ export const FALLBACK_SUB_WEIGHTS = {
     pace: [0.15, 0.65, 0.20],
     spin: [0.15, 0.65, 0.20],
     allrounder: [0.35, 0.45, 0.20],
+    bowlrounder: [0.20, 0.55, 0.25],
     keeper: [0.45, 0.10, 0.45],
 };
 
@@ -588,7 +590,7 @@ export function calcPDI(coachData, selfData, role, ccmResult, dbWeights, constan
     };
 
     // ── Extract match-up confidence → domain self-scores ──
-    const hasBowling = ['pace', 'spin', 'allrounder'].includes(role);
+    const hasBowling = ['pace', 'spin', 'allrounder', 'bowlrounder'].includes(role);
     const mcSelf = extractMatchUpSelf(selfData, hasBowling);
 
     // Helper: use old sr_ self-data if available, fall back to match-up confidence

@@ -71,7 +71,9 @@ export function AuthProvider({ children }) {
         };
 
         const sessionPromise = getSession();
-        const timeoutPromise = new Promise(r => setTimeout(() => r(null), 1500));
+        // 3s timeout (was 1.5s) — mobile 3G/4G networks often take 2+ seconds for getSession().
+        // If this fires before the real session arrives, user briefly sees login screen.
+        const timeoutPromise = new Promise(r => setTimeout(() => r(null), 3000));
 
         Promise.race([sessionPromise, timeoutPromise]).then(async (s) => {
             if (cancelled) return;

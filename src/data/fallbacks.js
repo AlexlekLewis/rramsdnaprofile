@@ -10,6 +10,7 @@ export const FALLBACK_RW = {
     spin: { tm: .18, te: .18, pc: .08, mr: .12, af: .08, mi: .12, pw: .06, sa: .18 },
     keeper: { tm: .16, te: .14, pc: .10, mr: .12, af: .16, mi: .10, pw: .08, sa: .14 },
     allrounder: { tm: .14, te: .16, pc: .10, mr: .14, af: .10, mi: .14, pw: .08, sa: .14 },
+    bowlrounder: { tm: .16, te: .14, pc: .14, mr: .14, af: .10, mi: .14, pw: .06, sa: .12 },
 };
 
 // ═══ LEGACY 6-DOMAIN WEIGHTS (kept for backward compat / migration) ═══
@@ -19,6 +20,7 @@ export const FALLBACK_RW_LEGACY = {
     spin: { t: .35, i: .25, m: .20, h: .10, ph: .10 },
     keeper: { t: .35, i: .20, m: .20, h: .15, ph: .10 },
     allrounder: { t: .30, i: .25, m: .20, h: .15, ph: .10 },
+    bowlrounder: { t: .30, i: .20, m: .20, h: .20, ph: .10 },
 };
 
 export const FALLBACK_CONST = {

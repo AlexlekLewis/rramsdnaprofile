@@ -12,6 +12,7 @@ const ROLE_TARGETS = {
     keeper: { min: 2, surplus: 2 },
     batter: { min: 0, surplus: 5 },
     allrounder: { min: 0, surplus: 4 },
+    bowlrounder: { min: 0, surplus: 4 },
 };
 const MIN_TOTAL_BOWLERS = 6;
 
@@ -55,7 +56,7 @@ function getRoleCategory(role, bowlingType) {
     if (r.includes('pace') || r === 'pace') return 'pace';
     if (r.includes('spin') || r === 'spin') return 'spin';
     if (r.includes('keep') || r === 'keeper') return 'keeper';
-    if (r.includes('allround') || r === 'allrounder') {
+    if (r.includes('allround') || r === 'allrounder' || r === 'bowlrounder') {
         // Count allrounders toward pace or spin based on bowling type
         if (bowlingType && (bowlingType.toLowerCase().includes('spin') || bowlingType.toLowerCase().includes('off') || bowlingType.toLowerCase().includes('leg'))) return 'spin';
         return 'pace'; // Default allrounder to pace
