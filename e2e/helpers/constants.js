@@ -34,7 +34,7 @@ export const SEL = {
   loginUsernameInput: 'input[placeholder="Username"]',
   loginPasswordInput: 'input[placeholder="Password"]',
   signInButton: 'button:has-text("SIGN IN")',
-  registerLink: 'text=New player? Register here',
+  registerLink: 'text=New here? Register with your code',
   loginInstructionsLink: 'text=Login Instructions',
   forgotPasswordText: 'text=Forgot your password?',
 
