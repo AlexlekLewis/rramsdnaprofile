@@ -44,10 +44,14 @@ export async function loadPlayersFromDB() {
             cd = {
                 batA: ass.batting_archetype, bwlA: ass.bowling_archetype, narrative: ass.narrative, sqRec: ass.squad_rec,
                 pl_explore: ass.plan_explore, pl_challenge: ass.plan_challenge, pl_execute: ass.plan_execute,
+                overall_batting: ass.overall_batting || null, overall_rating: ass.overall_rating || null,
+                batting_qualities: ass.batting_qualities || null,
+                _playerVoice: ass.player_voice || null,
                 ...Object.fromEntries((ass.strengths || []).map((s, i) => [`str${i + 1}`, s])),
                 ...Object.fromEntries((ass.priorities || []).map((s, i) => [`pri${i + 1}`, s])),
                 ...(ass.phase_ratings || {}), ...(ass.tech_primary || {}), ...(ass.tech_secondary || {}),
-                ...(ass.game_iq || {}), ...(ass.mental || {}), ...(ass.physical || {})
+                ...(ass.game_iq || {}), ...(ass.mental || {}), ...(ass.physical || {}),
+                ...(ass.fielding || {})
             };
         }
         return {
@@ -362,15 +366,31 @@ export async function saveAssessmentToDB(playerId, cd) {
     const game_iq = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('iq_')));
     const mental = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('mn_')));
     const physical = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('ph_')));
+    const fielding = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('fld_')));
     const strengths = [cd.str1, cd.str2, cd.str3].filter(Boolean);
     const priorities = [cd.pri1, cd.pri2, cd.pri3].filter(Boolean);
+
+    // Count how many actual ratings exist to determine status
+    const allRatingKeys = [...Object.keys(tech_primary), ...Object.keys(tech_secondary), ...Object.keys(game_iq), ...Object.keys(mental), ...Object.keys(physical), ...Object.keys(fielding)];
+    const ratedCount = allRatingKeys.filter(k => cd[k] > 0).length;
+    const hasNarrative = !!cd.narrative;
+    const assessmentStatus = (ratedCount > 0 && hasNarrative && strengths.length > 0) ? 'complete' : 'draft';
+
     const row = {
         player_id: playerId, coach_id: session?.user?.id || null,
         batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
-        phase_ratings, tech_primary, tech_secondary, game_iq, mental, physical,
+        phase_ratings, tech_primary, tech_secondary, game_iq, mental, physical, fielding,
         narrative: cd.narrative || null, strengths, priorities,
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
-        squad_rec: cd.sqRec || null, updated_at: new Date().toISOString()
+        squad_rec: cd.sqRec || null,
+        // New columns for Assessment Week
+        overall_batting: cd.overall_batting || null,
+        overall_rating: cd.overall_rating || null,
+        batting_qualities: cd.batting_qualities || null,
+        session_date: new Date().toISOString().split('T')[0],
+        status: assessmentStatus,
+        player_voice: cd._playerVoice || null,
+        updated_at: new Date().toISOString()
     };
     const { data: upsertData, error: upsertErr } = await supabase
         .from('coach_assessments')
@@ -465,6 +485,14 @@ export async function loadSkillDefs() {
         out[r.skill_name][r.level] = r.description;
     });
     return out;
+}
+
+export async function loadPlayerScores() {
+    const { data, error } = await supabase
+        .from('coach_assessments')
+        .select('player_id, batting_archetype, bowling_archetype, overall_rating, overall_batting, status, updated_at');
+    if (error) { console.error('loadPlayerScores error:', error); return []; }
+    return data || [];
 }
 
 export async function loadStatBenchmarks() {

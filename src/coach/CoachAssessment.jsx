@@ -8,7 +8,7 @@ import { useEngine } from "../context/EngineContext";
 
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
-import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE } from "../data/skillItems";
+import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE, FLD_ITEMS } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile } from "../db/playerDb";
 import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
@@ -174,8 +174,31 @@ export default function CoachAssessment() {
     const saveTimer = useRef(null);
     const pendingCdRef = useRef({});
     const retryCount = useRef(0);
+    const currentPlayerIdRef = useRef(null);
 
     const goTop = () => window.scrollTo(0, 0);
+
+    // ── Flush pending saves on tab close / navigate away ──
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            const pid = currentPlayerIdRef.current;
+            const pending = pendingCdRef.current;
+            if (pid && pending && Object.keys(pending).length > 0) {
+                // Save draft to localStorage as safety net
+                try { localStorage.setItem(`rra_draft_${pid}`, JSON.stringify(pending)); } catch {}
+                // Attempt synchronous save via sendBeacon
+                try {
+                    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/coach_assessments?on_conflict=player_id`;
+                    const payload = JSON.stringify({ player_id: pid, ...pending, updated_at: new Date().toISOString() });
+                    navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+                } catch {}
+                e.preventDefault();
+                e.returnValue = 'You have unsaved assessment data.';
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, []);
 
     // ── Reopen player profile (admin/coach) ──
     const handleReopenProfile = async (e, playerId, playerName) => {
@@ -555,7 +578,7 @@ export default function CoachAssessment() {
                     <div style={{ fontSize: 12, color: B.g800, fontFamily: F }}>{sp.goals || "—"}</div>
                 </div>
 
-                <button onClick={() => { setCView("assess"); setCPage(0); goTop(); }} style={btnSty(true, true)}>BEGIN ASSESSMENT →</button>
+                <button onClick={() => { currentPlayerIdRef.current = sp.id; setCView("assess"); setCPage(0); goTop(); }} style={btnSty(true, true)}>BEGIN ASSESSMENT →</button>
                 <button onClick={() => { setCView("list"); setSelP(null); }} style={backBtn}>← Back to roster</button>
             </div>
         </div>);
@@ -563,8 +586,24 @@ export default function CoachAssessment() {
 
     // ═══ ASSESSMENT PAGES ═══
     if (cView === "assess" && sp) {
-        const cd = sp.cd || {};
+        // Recover any unsaved draft from localStorage (e.g. after tab crash / accidental close)
+        let cd = sp.cd || {};
+        try {
+            const draft = localStorage.getItem(`rra_draft_${sp.id}`);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                // Merge draft over existing — draft is newer
+                cd = { ...cd, ...parsed };
+                // Remove the draft now that it's loaded
+                localStorage.removeItem(`rra_draft_${sp.id}`);
+            }
+        } catch {}
+        // Inject player voice data for persistence
+        if (sp.self_ratings && Object.keys(sp.self_ratings).length > 0 && !cd._playerVoice) {
+            cd._playerVoice = sp.self_ratings;
+        }
         pendingCdRef.current = cd;
+        currentPlayerIdRef.current = sp.id;
         const cU = (k, v) => {
             setPlayers(ps => ps.map(p => p.id === sp.id ? { ...p, cd: { ...p.cd, [k]: v } } : p));
             pendingCdRef.current = { ...pendingCdRef.current, [k]: v };
@@ -670,6 +709,9 @@ export default function CoachAssessment() {
                 <SecH title="Physical & Athletic" />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{(PH_MAP[sp.role] || PH_MAP.batter).filter((_, i) => cd[`ph_${i}`] > 0).length}/{(PH_MAP[sp.role] || PH_MAP.batter).length} rated</div>
                 <AssGrid items={PH_MAP[sp.role] || PH_MAP.batter} values={cd} onRate={cU} color={B.nv} SKILL_DEFS={COACH_DEFS} keyPrefix="ph" />
+                <SecH title="Athletic Fielding" sub="Universal across all roles" />
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{FLD_ITEMS.filter((_, i) => cd[`fld_${i}`] > 0).length}/{FLD_ITEMS.length} rated</div>
+                <AssGrid items={FLD_ITEMS} values={cd} onRate={cU} color={B.grn} SKILL_DEFS={COACH_DEFS} keyPrefix="fld" />
             </div>);
 
             if (cPage === 3) {
