@@ -1,10 +1,10 @@
-// ═══ SAVE STATUS TOAST — Floating feedback for auto-save ═══
+// ═══ SAVE STATUS — Persistent indicator + floating toast for auto-save ═══
 import { useState, useEffect, useCallback } from 'react';
 import { B, F } from '../data/theme';
 
 // Status types: 'idle' | 'saving' | 'saved' | 'error' | 'offline'
 const ICONS = { saving: '⏳', saved: '✓', error: '⚠', offline: '📡' };
-const LABELS = { saving: 'Saving…', saved: 'Saved', error: 'Save failed', offline: 'Offline — saved locally' };
+const LABELS = { saving: 'Saving…', saved: 'All changes saved', error: 'Save failed', offline: 'Offline — saved locally' };
 const COLORS = { saving: B.bl, saved: B.grn, error: '#e53e3e', offline: '#dd6b20' };
 
 export function SaveToast({ status, message }) {
@@ -39,10 +39,42 @@ export function SaveToast({ status, message }) {
             transform: fadeOut ? 'translateY(-8px)' : 'translateY(0)',
             transition: 'opacity 0.5s, transform 0.5s',
             fontFamily: F, fontSize: 11, fontWeight: 600, color,
-            pointerEvents: 'none',
+            pointerEvents: status === 'error' || status === 'offline' ? 'auto' : 'none',
         }}>
             <span style={{ fontSize: 14 }}>{ICONS[status]}</span>
             <span>{message || LABELS[status]}</span>
+            {status === 'error' && (
+                <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>— will retry</span>
+            )}
+        </div>
+    );
+}
+
+// ═══ SaveStatusBar — Persistent inline indicator for assessment header ═══
+export function SaveStatusBar({ status, message, onRetry }) {
+    if (status === 'idle') return null;
+
+    const color = COLORS[status] || B.g600;
+    const label = message || LABELS[status];
+
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 6,
+            background: `${color}10`, border: `1px solid ${color}30`,
+            fontSize: 10, fontWeight: 700, color, fontFamily: F,
+            transition: 'all 0.3s ease',
+            whiteSpace: 'nowrap',
+        }}>
+            <span style={{ fontSize: 12 }}>{ICONS[status]}</span>
+            <span>{label}</span>
+            {(status === 'error' || status === 'offline') && onRetry && (
+                <button onClick={onRetry} style={{
+                    marginLeft: 4, padding: '2px 8px', borderRadius: 4,
+                    border: `1px solid ${color}50`, background: 'transparent',
+                    color, fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: F,
+                }}>Retry</button>
+            )}
         </div>
     );
 }

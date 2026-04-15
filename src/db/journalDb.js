@@ -59,14 +59,19 @@ export async function saveJournalEntry(entry, userId) {
     // Map frontend fields → DB columns
     // DB has: player_id, program_id, session_id, entry_type, responses (jsonb), week_number
     // Frontend sends: answers [{q,a}], mood, session_id, program_id (optional)
+    // Determine entry type: weekly_review > session > freeform
+    const entryType = entry._entryType || (entry.session_id ? 'session' : 'freeform');
     const payload = {
         player_id: userId,
         session_id: entry.session_id || null,
         program_id: entry.program_id || null,
-        entry_type: entry.session_id ? 'session' : 'freeform',
+        entry_type: entryType,
         responses: { answers: entry.answers || [], mood: entry.mood || null },
         updated_at: new Date().toISOString(),
     };
+    // Include week_number and effort_rating for weekly reviews
+    if (entry._weekNumber) payload.week_number = entry._weekNumber;
+    if (entry._effortRating != null) payload.effort_rating = entry._effortRating;
 
     if (entry.id) {
         const { data, error } = await supabase

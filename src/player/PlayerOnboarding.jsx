@@ -20,7 +20,7 @@ import {
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
-import { savePlayerToDB, saveDraftToDB, loadDraftFromDB } from "../db/playerDb";
+import { savePlayerToDB, saveDraftToDB, loadDraftFromDB, submitPlayerViaRPC } from "../db/playerDb";
 import { supabase, notifySlack } from "../supabaseClient";
 import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
@@ -199,16 +199,41 @@ export default function PlayerOnboarding() {
     useEffect(() => { savingRef.current = saving; }, [saving]);
 
     // ── Load saved draft from database on mount ──
+    // CRITICAL: localStorage may have MORE data than the DB if auto-save was broken.
+    // Compare both versions and keep the one with more progress to prevent data loss.
     useEffect(() => {
         if (!session?.user?.id) { setDraftLoading(false); return; }
         let cancelled = false;
         loadDraftFromDB(session.user.id).then(draft => {
             if (cancelled) return;
             if (draft) {
-                setPd(draft.pd);
-                setPStep(draft.step);
-                setDraftId(draft.draftId);
-                lastSavedRef.current = JSON.stringify(draft.pd);
+                // Count non-empty fields in each version to determine which is richer
+                const localPd = pdRef.current; // Current state (from localStorage via useSessionState)
+                const dbPd = draft.pd;
+                const countFields = (obj) => Object.keys(obj).filter(k => {
+                    const v = obj[k];
+                    return v !== null && v !== undefined && v !== '' && k !== 'grades' && !k.startsWith('_');
+                }).length;
+                const localFields = countFields(localPd);
+                const dbFields = countFields(dbPd);
+                const localStep = pStep; // Current step from localStorage
+                const dbStep = draft.step;
+
+                if (localStep > dbStep || (localStep === dbStep && localFields > dbFields + 3)) {
+                    // localStorage is ahead — keep it, save it to DB immediately
+                    console.log(`Draft merge: localStorage ahead (step ${localStep}, ${localFields} fields) vs DB (step ${dbStep}, ${dbFields} fields). Keeping localStorage, syncing to DB.`);
+                    setDraftId(draft.draftId);
+                    lastSavedRef.current = null; // Force auto-save to fire immediately
+                    // Trigger an immediate save of localStorage data to DB
+                    setTimeout(() => saveDraft(localPd, localStep), 500);
+                } else {
+                    // DB is same or ahead — use it (normal path)
+                    console.log(`Draft merge: DB version used (step ${dbStep}, ${dbFields} fields) vs localStorage (step ${localStep}, ${localFields} fields).`);
+                    setPd(dbPd);
+                    setPStep(dbStep);
+                    setDraftId(draft.draftId);
+                    lastSavedRef.current = JSON.stringify(dbPd);
+                }
             }
             setDraftLoading(false);
         }).catch(err => {
@@ -739,72 +764,69 @@ export default function PlayerOnboarding() {
                         } catch (re) { console.warn('Pre-submit session refresh failed:', re.message); }
 
                         let submitSuccess = false;
+                        const MAX_RETRIES = 3;
 
-                        // Primary path: full client-side save (updates player data + grades)
-                        try {
-                            const saved = await savePlayerToDB(pd, activeUserId, draftId);
-                            if (!saved) throw new Error('Save returned no data');
-                            // Mark user_profiles.submitted so portal routing works on refresh
-                            // CRITICAL: This must succeed — if it fails silently, the player sees
-                            // the success screen but portal routing stays broken (submitted=false).
-                            if (activeUserId) {
-                                const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
-                                if (upErr) {
-                                    console.warn('user_profiles.submitted update failed, retrying:', upErr.message);
-                                    // Retry once after a short delay — transient RLS/network issues
-                                    await new Promise(r => setTimeout(r, 1000));
-                                    const { error: retryErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
-                                    if (retryErr) {
-                                        console.error('user_profiles.submitted retry also failed:', retryErr.message);
-                                        throw new Error('Profile status update failed — please try submitting again.');
+                        // PRIMARY PATH: Server-side RPC (single POST request — works on restrictive networks
+                        // that block PATCH/PUT methods like school laptops and corporate firewalls).
+                        // The v2 RPC saves ALL form data + grades + marks submitted in one atomic operation.
+                        if (draftId && activeUserId) {
+                            for (let attempt = 1; attempt <= MAX_RETRIES && !submitSuccess; attempt++) {
+                                try {
+                                    if (attempt > 1) {
+                                        setSubmitError(`Retrying... (attempt ${attempt}/${MAX_RETRIES})`);
+                                        await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff
+                                    }
+                                    const rpcResult = await submitPlayerViaRPC(pd, activeUserId, draftId);
+                                    if (rpcResult?.success) {
+                                        console.log(`Server-side submit succeeded via RPC (attempt ${attempt})`);
+                                        submitSuccess = true;
+                                    }
+                                } catch (rpcErr) {
+                                    console.warn(`RPC submit attempt ${attempt}/${MAX_RETRIES} failed:`, rpcErr.message);
+                                    if (attempt === MAX_RETRIES) {
+                                        console.warn('All RPC attempts failed, trying client-side fallback');
                                     }
                                 }
                             }
-                            submitSuccess = true;
-                        } catch (primaryErr) {
-                            console.warn('Primary submit failed, trying server-side RPC:', primaryErr.message);
-                            // Fallback: server-side RPC that runs as SECURITY DEFINER (bypasses session/RLS)
-                            // This ensures submit works even when mobile sessions have fully degraded
-                            if (draftId && activeUserId) {
-                                try {
-                                    const { data: rpcResult, error: rpcErr } = await supabase.rpc('submit_player_profile', {
-                                        p_player_id: draftId,
-                                        p_auth_user_id: activeUserId,
-                                    });
-                                    if (rpcErr) throw rpcErr;
-                                    if (rpcResult?.success) {
-                                        console.log('Server-side submit succeeded via RPC');
-                                        // CRITICAL: RPC marks players.submitted=true server-side,
-                                        // but we must ALSO update user_profiles.submitted for portal routing.
-                                        // Without this, the player sees success but gets routed back to onboarding on next login.
-                                        if (activeUserId) {
-                                            try {
-                                                const { error: upErr2 } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
-                                                if (upErr2) {
-                                                    console.warn('user_profiles update after RPC failed, retrying:', upErr2.message);
-                                                    await new Promise(r => setTimeout(r, 1000));
-                                                    await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
-                                                }
-                                            } catch (upRpcErr) {
-                                                console.warn('user_profiles update after RPC error (non-blocking):', upRpcErr.message);
-                                                // Don't throw — the player data IS saved via RPC. Portal routing
-                                                // may be broken until user_profiles syncs, but data is safe.
-                                            }
-                                        }
-                                        submitSuccess = true;
-                                    } else {
-                                        throw new Error(rpcResult?.error || 'RPC returned failure');
+                        }
+
+                        // FALLBACK: Client-side save (PATCH request — may fail on restrictive networks)
+                        if (!submitSuccess) {
+                            try {
+                                const saved = await savePlayerToDB(pd, activeUserId, draftId);
+                                if (!saved) throw new Error('Save returned no data');
+                                // Mark user_profiles.submitted for portal routing
+                                if (activeUserId) {
+                                    const { error: upErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                    if (upErr) {
+                                        await new Promise(r => setTimeout(r, 1000));
+                                        const { error: retryErr } = await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                        if (retryErr) console.error('user_profiles update failed:', retryErr.message);
                                     }
-                                } catch (rpcErr) {
-                                    console.error('RPC fallback also failed:', rpcErr);
-                                    throw primaryErr; // re-throw original error for UI messaging
                                 }
-                            } else {
-                                throw primaryErr;
+                                submitSuccess = true;
+                            } catch (clientErr) {
+                                console.error('Client-side fallback also failed:', clientErr.message);
+                                // Last resort: try the simple v1 RPC (just flips submitted flag, no data save)
+                                if (draftId && activeUserId) {
+                                    try {
+                                        const { data: v1Result, error: v1Err } = await supabase.rpc('submit_player_profile', {
+                                            p_player_id: draftId, p_auth_user_id: activeUserId,
+                                        });
+                                        if (!v1Err && v1Result?.success) {
+                                            console.log('v1 RPC succeeded (submitted flag only)');
+                                            submitSuccess = true;
+                                        }
+                                    } catch (v1RpcErr) {
+                                        console.error('v1 RPC also failed:', v1RpcErr);
+                                    }
+                                }
+                                if (!submitSuccess) throw clientErr;
                             }
                         }
 
                         if (submitSuccess) {
+                            setSubmitError('');
                             try { localStorage.removeItem('rra_pd'); localStorage.removeItem('rra_pStep'); localStorage.removeItem('rra_obGuide'); } catch {}
                             notifySlack('submission', { name: pd.name, club: pd.club, role: pd.role, dob: pd.dob, association: pd.assoc });
                             lastSavedRef.current = JSON.stringify(pd);
@@ -813,12 +835,12 @@ export default function PlayerOnboarding() {
                     } catch (e) {
                         console.error('Submit error:', e);
                         const msg = e.message || '';
-                        if (msg.includes('permission') || msg.includes('blocked')) {
-                            setSubmitError('Session expired. Please sign out and sign back in, then try again.');
-                        } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-                            setSubmitError('Network error. Please check your connection and try again.');
+                        if (msg.includes('permission') || msg.includes('blocked') || msg.includes('access denied')) {
+                            setSubmitError('Session expired. Please sign out, sign back in, and try submitting again.');
+                        } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
+                            setSubmitError('Your internet connection is unstable. Please move to a stronger signal, then tap SUBMIT again. Your answers are saved on this device.');
                         } else {
-                            setSubmitError('Failed to submit — please try again. If it keeps failing, sign out and sign back in.');
+                            setSubmitError('Failed to submit — please try again. If it keeps failing, sign out, sign back in, and try once more.');
                         }
                     } finally {
                         setSubmitting(false);

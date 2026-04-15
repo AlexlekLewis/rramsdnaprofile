@@ -15,10 +15,11 @@ import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
 import { generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
+import { SESSION_GROUPS, getPlayerSessionGroup } from "../data/sessionGroups";
 
 // ═══ SHARED UI ═══
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring } from "../shared/FormComponents";
-import { SaveToast, useSaveStatus } from "../shared/SaveToast";
+import { SaveToast, SaveStatusBar, useSaveStatus } from "../shared/SaveToast";
 
 // ═══ LAZY-LOADED COMPONENTS ═══
 const ReportCard = React.lazy(() => import("./ReportCard"));
@@ -146,6 +147,45 @@ const ConfidenceSummary = React.memo(({ sr, hasMC, hasBowling }) => {
     );
 });
 
+// ═══ Extracted sub-components (module-level to prevent remount on parent re-render) ═══
+const AccountRow = ({ m, resettingId, handleReset }) => (
+    <div style={{ ...sCard, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.role === 'player' ? `${B.bl}20` : m.role === 'coach' ? `${B.pk}20` : `${B.prp}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, fontFamily: F }}>
+                {(m.display_name || m.username || '?').charAt(0).toUpperCase()}
+            </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{m.display_name || '—'}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>
+                    <span style={{ fontWeight: 600, color: B.bl }}>@{m.username}</span>
+                </div>
+                <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>
+                    pw: <span style={{ fontFamily: 'monospace', fontWeight: 600, color: B.nvD, background: B.g100, padding: '1px 4px', borderRadius: 3, fontSize: 10 }}>{m.generated_password || '(self-set)'}</span>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+                <div style={{ fontSize: 8, fontWeight: 700, color: B.w, background: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', fontFamily: F }}>{m.role}</div>
+                <div style={{ fontSize: 8, fontWeight: 600, color: m.active ? B.grn : B.red, fontFamily: F }}>{m.active ? '● Active' : '● Inactive'}</div>
+            </div>
+        </div>
+        <button
+            disabled={resettingId === m.auth_user_id}
+            onClick={() => handleReset(m)}
+            style={{ fontSize: 9, fontWeight: 700, color: B.w, background: resettingId === m.auth_user_id ? B.g400 : B.pk, border: 'none', borderRadius: 6, padding: '6px 12px', cursor: resettingId === m.auth_user_id ? 'default' : 'pointer', fontFamily: F, whiteSpace: 'nowrap', flexShrink: 0 }}
+        >{resettingId === m.auth_user_id ? 'Resetting...' : 'Reset PW'}</button>
+    </div>
+);
+
+const SectionLabel = ({ label, count, color }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 6px' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color, fontFamily: F, letterSpacing: 1 }}>{label}</div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: B.g400, fontFamily: F }}>({count})</div>
+        <div style={{ flex: 1, height: 1, background: B.g200 }} />
+    </div>
+);
+
 export default function CoachAssessment() {
     const { session, portal, isAdmin, signOut } = useAuth();
     const { compTiers, dbWeights, engineConst } = useEngine();
@@ -163,6 +203,7 @@ export default function CoachAssessment() {
     const [rosterSearch, setRosterSearch] = useState('');
     const [rosterSort, setRosterSort] = useState('name'); // name | pdi-desc | ccm-desc | assessed
     const [rosterFilter, setRosterFilter] = useState('all'); // all | assessed | unassessed | role-ids
+    const [groupBySession, setGroupBySession] = useState(true); // Default ON for assessment week
     const saveStatusHook = useSaveStatus();
 
     // ── Admin accounts panel state ──
@@ -176,6 +217,18 @@ export default function CoachAssessment() {
     const retryCount = useRef(0);
 
     const goTop = () => window.scrollTo(0, 0);
+
+    // ── Unsaved changes guard — warn before leaving during active save ──
+    useEffect(() => {
+        const handler = (e) => {
+            if (cView === 'assess' && (saveStatusHook.status === 'saving' || saveStatusHook.status === 'error')) {
+                e.preventDefault();
+                e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+            }
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [cView, saveStatusHook.status]);
 
     // ── Reopen player profile (admin/coach) ──
     const handleReopenProfile = async (e, playerId, playerName) => {
@@ -233,6 +286,21 @@ export default function CoachAssessment() {
     const handleNav = (viewId) => { setCView(viewId); goTop(); };
     const showNavBar = !['assess', 'survey', 'report'].includes(cView);
 
+    // ═══ LOADING STATE — show spinner while players fetch ═══
+    if (loading && players.length === 0) return (
+        <div style={{ minHeight: "100vh", background: B.g50, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <img src={LOGO} alt="" style={{ width: 56, height: 56, objectFit: "contain", marginBottom: 12, opacity: 0.6 }} />
+            <div style={{ fontSize: 13, color: B.g400, fontFamily: F, fontWeight: 600 }}>Loading roster...</div>
+        </div>
+    );
+
+    // ═══ SAFETY: reset to roster if cView needs a player but sp is missing ═══
+    if (['assess', 'survey'].includes(cView) && !sp && !loading) {
+        // Player not found after load — bounce back to roster safely
+        setCView("list");
+        setSelP(null);
+    }
+
     // ═══ ADMIN DASHBOARD ═══
     if (cView === "admin") return (
         <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
@@ -283,7 +351,11 @@ export default function CoachAssessment() {
             <div style={{ marginBottom: 10 }}>
                 <input value={rosterSearch} onChange={e => setRosterSearch(e.target.value)} placeholder="Search players..."
                     style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button onClick={() => setGroupBySession(g => !g)}
+                        style={{ padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${groupBySession ? '#6366F1' : B.g200}`, background: groupBySession ? '#6366F110' : 'transparent', fontSize: 9, fontWeight: groupBySession ? 700 : 500, color: groupBySession ? '#6366F1' : B.g400, fontFamily: F, cursor: 'pointer' }}>
+                        📅 Session
+                    </button>
                     {[{ id: 'name', label: 'A-Z' }, { id: 'pdi-desc', label: 'PDI ↓' }, { id: 'ccm-desc', label: 'CCM ↓' }, { id: 'assessed', label: 'Assessed' }].map(s => (
                         <button key={s.id} onClick={() => setRosterSort(s.id)}
                             style={{ padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${rosterSort === s.id ? B.bl : B.g200}`, background: rosterSort === s.id ? `${B.bl}10` : 'transparent', fontSize: 9, fontWeight: rosterSort === s.id ? 700 : 500, color: rosterSort === s.id ? B.bl : B.g400, fontFamily: F, cursor: 'pointer' }}>
@@ -315,32 +387,27 @@ export default function CoachAssessment() {
                 );
             })()}
 
-            <div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
-                {loading && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>Loading players...</div>}
-                {!loading && players.filter(p => p.submitted).length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F, gridColumn: '1/-1' }}>No submitted players yet. Players will appear here once they complete onboarding.</div>}
-                {players.filter(p => p.submitted).filter(p => {
-                    // Search filter (client-side, instant)
+            {/* ── Player Cards ── */}
+            {(() => {
+                const filteredSorted = players.filter(p => p.submitted).filter(p => {
                     if (rosterSearch && !p.name?.toLowerCase().includes(rosterSearch.toLowerCase())) return false;
-                    // Category filter
                     if (rosterFilter === 'assessed') return Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
                     if (rosterFilter === 'unassessed') return !Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
                     if (rosterFilter.startsWith('role-')) return p.role === rosterFilter.replace('role-', '');
                     return true;
                 }).sort((a, b) => {
                     if (rosterSort === 'name') return (a.name || '').localeCompare(b.name || '');
-                    if (rosterSort === 'assessed') {
-                        const aA = rosterScores[a.id]?.hasCd ? 1 : 0;
-                        const bA = rosterScores[b.id]?.hasCd ? 1 : 0;
-                        return bA - aA;
-                    }
+                    if (rosterSort === 'assessed') return (rosterScores[b.id]?.hasCd ? 1 : 0) - (rosterScores[a.id]?.hasCd ? 1 : 0);
                     if (rosterSort === 'pdi-desc') return (rosterScores[b.id]?.dn?.pdi || 0) - (rosterScores[a.id]?.dn?.pdi || 0);
                     if (rosterSort === 'ccm-desc') return (rosterScores[b.id]?.ccmR?.ccm || 0) - (rosterScores[a.id]?.ccmR?.ccm || 0);
                     return 0;
-                }).map(p => {
+                });
+
+                // ── Render a single player card ──
+                const renderCard = (p) => {
                     const { ccmR, dn, hasCd, hasSelf, hasData, overallScore } = rosterScores[p.id] || {};
                     const a = getAge(p.dob), br = getBracket(p.dob), ro = ROLES.find(r => r.id === p.role);
                     const ini = p.name ? p.name.split(" ").map(w => w[0]).join("").slice(0, 2) : "?";
-
                     return (<div key={p.id} style={{ ...sCard, cursor: "pointer", display: "flex", gap: 10 }} onClick={() => { setSelP(p.id); setCView("survey"); goTop(); }}>
                         <div style={{ width: 40, height: 40, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                             <span style={{ color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F }}>{ini}</span>
@@ -351,7 +418,7 @@ export default function CoachAssessment() {
                                 <div style={{ display: "flex", gap: 4 }}>
                                     {overallScore !== null && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `linear-gradient(135deg,${B.bl}20,${B.pk}20)`, color: B.nvD, border: `1px solid ${B.g200}` }}>⭐ {overallScore}</div>}
                                     {dn && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${dn.gc}20`, color: dn.gc }}>PDI {dn.pdi.toFixed(1)}</div>}
-                                    {ccmR.ccm > 0 && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.bl}20`, color: B.bl }}>CCM {ccmR.ccm.toFixed(2)}</div>}
+                                    {ccmR?.ccm > 0 && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.bl}20`, color: B.bl }}>CCM {ccmR.ccm.toFixed(2)}</div>}
                                     {dn?.trajectory && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.grn}20`, color: B.grn }}>🚀</div>}
                                 </div>
                             </div>
@@ -362,8 +429,57 @@ export default function CoachAssessment() {
                             </div>
                         </div>
                     </div>);
-                })}
-            </div>
+                };
+
+                if (loading) return <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>Loading players...</div>;
+                if (filteredSorted.length === 0) return <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>No submitted players yet. Players will appear here once they complete onboarding.</div>;
+
+                // ── SESSION GROUPED VIEW ──
+                if (groupBySession) {
+                    const buckets = SESSION_GROUPS.filter(g => g.players.length > 0).map(g => ({
+                        group: g,
+                        players: filteredSorted.filter(p => getPlayerSessionGroup(p.name) === g.id),
+                    })).filter(b => b.players.length > 0);
+                    const assignedIds = new Set(buckets.flatMap(b => b.players.map(p => p.id)));
+                    const ungrouped = filteredSorted.filter(p => !assignedIds.has(p.id));
+
+                    return (<div>
+                        {buckets.map(({ group: g, players: gPlayers }) => {
+                            const assessed = gPlayers.filter(p => rosterScores[p.id]?.hasCd);
+                            return (<div key={g.id} style={{ marginBottom: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: `${g.color}08`, borderRadius: 10, border: `1.5px solid ${g.color}25` }}>
+                                    <div style={{ width: 6, height: 28, borderRadius: 3, background: g.color, flexShrink: 0 }} />
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 800, color: g.color, fontFamily: F, letterSpacing: 0.5 }}>{g.label}</div>
+                                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 1 }}>{gPlayers.length} player{gPlayers.length !== 1 ? 's' : ''} • {assessed.length} assessed</div>
+                                    </div>
+                                    <div style={{ fontSize: 18, fontWeight: 900, color: g.color, fontFamily: F, opacity: 0.3 }}>{gPlayers.length}</div>
+                                </div>
+                                <div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
+                                    {gPlayers.map(renderCard)}
+                                </div>
+                            </div>);
+                        })}
+                        {ungrouped.length > 0 && (<div style={{ marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: `${B.g400}08`, borderRadius: 10, border: `1.5px solid ${B.g200}` }}>
+                                <div style={{ width: 6, height: 28, borderRadius: 3, background: B.g400, flexShrink: 0 }} />
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 800, color: B.g400, fontFamily: F, letterSpacing: 0.5 }}>UNGROUPED</div>
+                                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 1 }}>{ungrouped.length} player{ungrouped.length !== 1 ? 's' : ''} • Not yet matched to a session</div>
+                                </div>
+                            </div>
+                            <div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
+                                {ungrouped.map(renderCard)}
+                            </div>
+                        </div>)}
+                    </div>);
+                }
+
+                // ── FLAT VIEW (original) ──
+                return (<div style={isDesktop() ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } : {}}>
+                    {filteredSorted.map(renderCard)}
+                </div>);
+            })()}
         </div>
         <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} />
     </div>);
@@ -391,43 +507,7 @@ export default function CoachAssessment() {
         const coachAccounts = accounts.filter(a => a.role === 'coach');
         const adminAccounts = accounts.filter(a => ['admin', 'super_admin'].includes(a.role));
 
-        const AccountRow = ({ m }) => (
-            <div style={{ ...sCard, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.role === 'player' ? `${B.bl}20` : m.role === 'coach' ? `${B.pk}20` : `${B.prp}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, fontFamily: F }}>
-                        {(m.display_name || m.username || '?').charAt(0).toUpperCase()}
-                    </span>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{m.display_name || '—'}</div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
-                        <div style={{ fontSize: 10, color: B.g600, fontFamily: F }}>
-                            <span style={{ fontWeight: 600, color: B.bl }}>@{m.username}</span>
-                        </div>
-                        <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>
-                            pw: <span style={{ fontFamily: 'monospace', fontWeight: 600, color: B.nvD, background: B.g100, padding: '1px 4px', borderRadius: 3, fontSize: 10 }}>{m.generated_password || '(self-set)'}</span>
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
-                        <div style={{ fontSize: 8, fontWeight: 700, color: B.w, background: m.role === 'player' ? B.bl : m.role === 'coach' ? B.pk : B.prp, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', fontFamily: F }}>{m.role}</div>
-                        <div style={{ fontSize: 8, fontWeight: 600, color: m.active ? B.grn : B.red, fontFamily: F }}>{m.active ? '● Active' : '● Inactive'}</div>
-                    </div>
-                </div>
-                <button
-                    disabled={resettingId === m.auth_user_id}
-                    onClick={() => handleReset(m)}
-                    style={{ fontSize: 9, fontWeight: 700, color: B.w, background: resettingId === m.auth_user_id ? B.g400 : B.pk, border: 'none', borderRadius: 6, padding: '6px 12px', cursor: resettingId === m.auth_user_id ? 'default' : 'pointer', fontFamily: F, whiteSpace: 'nowrap', flexShrink: 0 }}
-                >{resettingId === m.auth_user_id ? 'Resetting...' : 'Reset PW'}</button>
-            </div>
-        );
-
-        const SectionLabel = ({ label, count, color }) => (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 6px' }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color, fontFamily: F, letterSpacing: 1 }}>{label}</div>
-                <div style={{ fontSize: 9, fontWeight: 600, color: B.g400, fontFamily: F }}>({count})</div>
-                <div style={{ flex: 1, height: 1, background: B.g200 }} />
-            </div>
-        );
+        // AccountRow and SectionLabel extracted to module-level (see top of file)
 
         return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
             <Hdr label="ADMIN — ACCOUNTS" onLogoClick={signOut} />
@@ -457,17 +537,17 @@ export default function CoachAssessment() {
 
                     {adminAccounts.length > 0 && <>
                         <SectionLabel label="ADMIN" count={adminAccounts.length} color={B.prp} />
-                        {adminAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                        {adminAccounts.map(m => <AccountRow key={m.id} m={m} resettingId={resettingId} handleReset={handleReset} />)}
                     </>}
 
                     {coachAccounts.length > 0 && <>
                         <SectionLabel label="COACHES" count={coachAccounts.length} color={B.pk} />
-                        {coachAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                        {coachAccounts.map(m => <AccountRow key={m.id} m={m} resettingId={resettingId} handleReset={handleReset} />)}
                     </>}
 
                     {playerAccounts.length > 0 && <>
                         <SectionLabel label="PLAYERS" count={playerAccounts.length} color={B.bl} />
-                        {playerAccounts.map(m => <AccountRow key={m.id} m={m} />)}
+                        {playerAccounts.map(m => <AccountRow key={m.id} m={m} resettingId={resettingId} handleReset={handleReset} />)}
                     </>}
 
                     {accounts.length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>No accounts found.</div>}
@@ -565,27 +645,84 @@ export default function CoachAssessment() {
     if (cView === "assess" && sp) {
         const cd = sp.cd || {};
         pendingCdRef.current = cd;
+
+        // ── Compute and inject derived scores into cd before save ──
+        // Accepts a snapshot of player data to avoid stale closure over sp
+        const enrichCdWithScores = (currentCd, playerSnap) => {
+            try {
+                const ccm = calcCCM(playerSnap.grades, playerSnap.dob, compTiers, engineConst);
+                const dnResult = calcPDI({ ...currentCd, _dob: playerSnap.dob }, playerSnap.self_ratings, playerSnap.role, ccm, dbWeights, engineConst, playerSnap.grades, {}, playerSnap.topBat, playerSnap.topBowl, compTiers);
+
+                if (dnResult && dnResult.pdi > 0) {
+                    const pathS = dnResult.pdiPct;
+                    const cohortS = calcCohortPercentile(dnResult.pdi, players, compTiers, dbWeights, engineConst);
+                    const ageS = calcAgeScore(ccm.arm, engineConst);
+                    currentCd._overallRating = Math.round((pathS + cohortS + ageS) / 3);
+
+                    // Batting domain score
+                    const batDomain = dnResult.domains.find(d => d.k === 'tech_primary' || d.l === 'Technical');
+                    currentCd._overallBatting = batDomain ? Math.round(batDomain.s100) : null;
+
+                    // Batting qualities breakdown
+                    const secDomain = dnResult.domains.find(d => d.k === 'tech_secondary');
+                    currentCd._battingQualities = {
+                        technique: Math.round(batDomain?.s100 || 0),
+                        secondary: Math.round(secDomain?.s100 || 0),
+                        phases: Object.fromEntries(
+                            ['pb_pp', 'pb_mid', 'pb_death'].filter(k => currentCd[k]).map(k => [k, currentCd[k]])
+                        )
+                    };
+                } else {
+                    currentCd._overallRating = null;
+                    currentCd._overallBatting = null;
+                    currentCd._battingQualities = null;
+                }
+
+                // Inject player voice (self-perception matchup data) for DB persistence
+                const sr = playerSnap.self_ratings || {};
+                const mcKeys = Object.keys(sr).filter(k => k.startsWith('mc_'));
+                if (mcKeys.length > 0) {
+                    currentCd._playerVoice = Object.fromEntries(mcKeys.map(k => [k, sr[k]]));
+                }
+            } catch (e) {
+                console.warn('Score enrichment failed (non-blocking):', e.message);
+            }
+            return currentCd;
+        };
+
         const cU = (k, v) => {
-            setPlayers(ps => ps.map(p => p.id === sp.id ? { ...p, cd: { ...p.cd, [k]: v } } : p));
+            // Capture player identity + data at call time to prevent stale closure
+            const playerId = sp.id;
+            const playerSnap = { grades: sp.grades, dob: sp.dob, self_ratings: sp.self_ratings, role: sp.role, topBat: sp.topBat, topBowl: sp.topBowl };
+
+            setPlayers(ps => ps.map(p => p.id === playerId ? { ...p, cd: { ...p.cd, [k]: v } } : p));
             pendingCdRef.current = { ...pendingCdRef.current, [k]: v };
             if (saveTimer.current) clearTimeout(saveTimer.current);
             saveTimer.current = setTimeout(async () => {
                 saveStatusHook.setSaving();
                 retryCount.current = 0;
+                // Enrich with computed scores before saving — uses captured playerSnap
+                const enrichedCd = enrichCdWithScores({ ...pendingCdRef.current }, playerSnap);
+                let lastRetryLog = 0;
                 const doSave = async () => {
                     try {
-                        await saveAssessmentToDB(sp.id, pendingCdRef.current);
+                        await saveAssessmentToDB(playerId, enrichedCd);
                         saveStatusHook.setSaved();
                         retryCount.current = 0;
-                        try { localStorage.removeItem(`rra_draft_${sp.id}`); } catch { }
+                        try { localStorage.removeItem(`rra_draft_${playerId}`); } catch { }
                     } catch (err) {
                         retryCount.current++;
+                        // Rate-limit console output to avoid flooding during repeated failures
+                        const now = Date.now();
+                        if (now - lastRetryLog > 5000) {
+                            console.warn(`Save retry ${retryCount.current}/3:`, err.message);
+                            lastRetryLog = now;
+                        }
                         if (retryCount.current <= 3) {
-                            console.warn(`Save retry ${retryCount.current}:`, err.message);
                             saveStatusHook.setError(`Retrying (${retryCount.current}/3)…`);
                             setTimeout(doSave, 1000 * Math.pow(2, retryCount.current - 1));
                         } else {
-                            try { localStorage.setItem(`rra_draft_${sp.id}`, JSON.stringify(pendingCdRef.current)); } catch { }
+                            try { localStorage.setItem(`rra_draft_${playerId}`, JSON.stringify(pendingCdRef.current)); } catch { }
                             saveStatusHook.setOffline();
                         }
                     }
@@ -852,11 +989,17 @@ export default function CoachAssessment() {
                         </div>
                         <button onClick={() => setShowGuide(true)} style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid ${B.bl}`, background: `${B.bl}10`, color: B.bl, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F, padding: 0, flexShrink: 0 }} title="How the engine works">ⓘ</button>
                         <button onClick={() => setCView("survey")} style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: "none", border: `1px solid ${B.bl}`, borderRadius: 4, padding: "3px 6px", cursor: "pointer", fontFamily: F }}>Survey</button>
+                        <SaveStatusBar status={saveStatusHook.status} message={saveStatusHook.message} />
                         <button disabled={!nextP} onClick={() => { if (nextP) { setSelP(nextP.id); setCPage(0); goTop(); } }}
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${nextP ? B.g200 : 'transparent'}`, background: 'transparent', color: nextP ? B.g600 : B.g200, fontSize: 14, cursor: nextP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>→</button>
                     </div>
                     <div style={{ padding: '4px 12px', background: B.g50, borderBottom: `1px solid ${B.g100}`, display: 'flex', justifyContent: 'center' }}>
-                        <button onClick={() => { setCView("list"); setSelP(null); goTop(); }}
+                        <button onClick={() => {
+                            if (saveStatusHook.status === 'saving' || saveStatusHook.status === 'error') {
+                                if (!confirm('Changes are still saving. Leave anyway?')) return;
+                            }
+                            setCView("list"); setSelP(null); goTop();
+                        }}
                             style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, textDecoration: 'underline' }}>← Back to Roster</button>
                     </div>
                 </>);
@@ -922,5 +1065,14 @@ export default function CoachAssessment() {
         </div>);
     }
 
-    return null;
+    // ═══ FALLBACK — should never reach here, but show safe recovery UI ═══
+    return (
+        <div style={{ minHeight: "100vh", background: B.g50, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <div style={{ fontSize: 13, color: B.g400, fontFamily: F, fontWeight: 600, marginBottom: 12 }}>Something unexpected happened.</div>
+            <button onClick={() => { setCView("list"); setSelP(null); goTop(); }}
+                style={{ padding: "12px 24px", borderRadius: 8, border: "none", background: `linear-gradient(135deg,${B.bl},${B.pk})`, color: B.w, fontSize: 13, fontWeight: 700, fontFamily: F, cursor: "pointer" }}>
+                Back to Roster
+            </button>
+        </div>
+    );
 }

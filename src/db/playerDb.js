@@ -175,6 +175,53 @@ export async function savePlayerToDB(pd, authUserId, draftId) {
     return player;
 }
 
+// ═══ SERVER-SIDE SUBMIT (RPC) ═══
+// Uses a single POST request via Supabase RPC — works reliably even on networks
+// that block PATCH/PUT methods (school laptops, corporate firewalls, content filters).
+// The RPC runs as SECURITY DEFINER so it bypasses RLS and handles everything server-side.
+
+export async function submitPlayerViaRPC(pd, authUserId, draftId) {
+    if (!authUserId || !draftId) throw new Error('Auth and draft ID required for RPC submit');
+
+    // Refresh session before submit — ensures the RPC call has a valid JWT
+    try {
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        if (refreshData?.session?.user?.id) authUserId = refreshData.session.user.id;
+    } catch (e) {
+        console.warn('Pre-RPC session refresh failed:', e.message);
+    }
+
+    // Build the player data payload (same shape as DB columns)
+    const playerData = { ...buildPlayerRow(pd), onboarding_progress: pd.onboardingProgress || null };
+
+    // Build grade rows (without player_id — the RPC handles that)
+    const grades = (pd.grades || []).filter(g => g.level).map((g, i) => ({
+        level: g.level, age_group: g.ageGroup, shield: g.shield || '', team: g.team || '',
+        association: g.association || '', matches: +g.matches || 0, batting_innings: +g.batInn || 0,
+        runs: +g.runs || 0, high_score: +g.hs || 0, batting_avg: +g.avg || 0,
+        not_outs: +g.notOuts || 0, balls_faced: +g.ballsFaced || 0,
+        bowling_innings: +g.bowlInn || 0, overs: +g.overs || 0, wickets: +g.wkts || 0,
+        strike_rate: g.sr ? +g.sr : null, bowling_avg: g.bAvg ? +g.bAvg : null,
+        economy: g.econ ? +g.econ : null,
+        best_bowl_wkts: +g.bestBowlWkts || 0, best_bowl_runs: +g.bestBowlRuns || 0,
+        catches: +g.ct || 0, run_outs: +g.ro || 0, stumpings: +g.st || 0,
+        keeper_catches: +g.keeperCatches || 0, hs_balls_faced: +g.hsBallsFaced || 0,
+        hs_boundaries: +g.hsBoundaries || 0, format: g.format || '', sort_order: i
+    }));
+
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc('submit_player_profile_v2', {
+        p_player_id: draftId,
+        p_auth_user_id: authUserId,
+        p_player_data: playerData,
+        p_grades: grades,
+    });
+
+    if (rpcErr) throw new Error(`RPC submit failed: ${rpcErr.message}`);
+    if (!rpcResult?.success) throw new Error(rpcResult?.error || 'Server-side submit returned failure');
+
+    return rpcResult;
+}
+
 // ═══ DRAFT SAVE / LOAD ═══
 
 export async function saveDraftToDB(pd, step, authUserId) {
@@ -320,6 +367,9 @@ export async function loadDraftFromDB(authUserId) {
     return { pd, step: progress.draftStep || 0, draftId: p.id };
 }
 
+// ── History snapshot throttle: 5 minutes between snapshots per player ──
+const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
+
 export async function saveAssessmentToDB(playerId, cd) {
     // Fetch session at function scope so it's accessible for both history and upsert
     let session = null;
@@ -330,31 +380,39 @@ export async function saveAssessmentToDB(playerId, cd) {
         console.warn('Failed to get session for coach_id:', e.message);
     }
 
-    // ── Snapshot existing assessment into history before overwriting ──
-    try {
-        const { data: existing } = await supabase
-            .from('coach_assessments')
-            .select('*')
-            .eq('player_id', playerId)
-            .maybeSingle();
-        if (existing) {
-            // Count existing history records to determine version number
-            const { count } = await supabase
-                .from('assessment_history')
-                .select('id', { count: 'exact', head: true })
-                .eq('player_id', playerId);
-            await supabase.from('assessment_history').insert({
-                player_id: playerId,
-                assessment_data: existing,
-                version: (count || 0) + 1,
-                created_by: session?.user?.id || null,
-            });
+    // ── Snapshot existing assessment into history — throttled to avoid bloat ──
+    const historyKey = `rra_last_history_${playerId}`;
+    let lastHistory = 0;
+    try { lastHistory = parseInt(localStorage.getItem(historyKey) || '0'); } catch { }
+    const now = Date.now();
+
+    if (now - lastHistory > HISTORY_INTERVAL_MS) {
+        try {
+            const { data: existing } = await supabase
+                .from('coach_assessments')
+                .select('*')
+                .eq('player_id', playerId)
+                .maybeSingle();
+            if (existing) {
+                const { count } = await supabase
+                    .from('assessment_history')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('player_id', playerId);
+                await supabase.from('assessment_history').insert({
+                    player_id: playerId,
+                    assessment_data: existing,
+                    version: (count || 0) + 1,
+                    created_by: session?.user?.id || null,
+                });
+                try { localStorage.setItem(historyKey, String(now)); } catch { }
+            }
+        } catch (e) {
+            // History save failure should never block the actual assessment save
+            console.warn('Assessment history snapshot failed:', e.message);
         }
-    } catch (e) {
-        // History save failure should never block the actual assessment save
-        console.warn('Assessment history snapshot failed:', e.message);
     }
 
+    // ── Build JSONB domain columns ──
     const phaseKeys = ['pb_pp', 'pw_pp', 'pb_mid', 'pw_mid', 'pb_death', 'pw_death'];
     const phase_ratings = Object.fromEntries(phaseKeys.filter(k => cd[k] != null).map(k => [k, cd[k]]));
     const tech_primary = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('t1_')));
@@ -362,15 +420,29 @@ export async function saveAssessmentToDB(playerId, cd) {
     const game_iq = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('iq_')));
     const mental = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('mn_')));
     const physical = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('ph_')));
+    const fielding = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('fld_')));
     const strengths = [cd.str1, cd.str2, cd.str3].filter(Boolean);
     const priorities = [cd.pri1, cd.pri2, cd.pri3].filter(Boolean);
+
+    // ── Auto-calculate status ──
+    const ratedSkills = [...Object.values(tech_primary), ...Object.values(tech_secondary)].filter(v => v > 0).length;
+    const status = (ratedSkills > 0 && cd.narrative && strengths.length > 0) ? 'complete' : 'draft';
+
     const row = {
         player_id: playerId, coach_id: session?.user?.id || null,
         batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
         phase_ratings, tech_primary, tech_secondary, game_iq, mental, physical,
+        fielding: Object.keys(fielding).length > 0 ? fielding : null,
         narrative: cd.narrative || null, strengths, priorities,
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
-        squad_rec: cd.sqRec || null, updated_at: new Date().toISOString()
+        squad_rec: cd.sqRec || null,
+        overall_batting: cd._overallBatting ?? null,
+        overall_rating: cd._overallRating ?? null,
+        batting_qualities: cd._battingQualities ?? null,
+        session_date: new Date().toISOString().split('T')[0],
+        status,
+        player_voice: cd._playerVoice || null,
+        updated_at: new Date().toISOString()
     };
     const { data: upsertData, error: upsertErr } = await supabase
         .from('coach_assessments')
@@ -452,6 +524,16 @@ export async function loadPlayerDNAData(authUserId) {
             updatedAt: assessment.updated_at,
         } : null,
     };
+}
+
+// ═══ COACH ASSESSMENT SCORES ═══
+
+export async function loadPlayerScores() {
+    const { data, error } = await supabase
+        .from('coach_assessments')
+        .select('player_id, batting_archetype, bowling_archetype, overall_rating, overall_batting, status, updated_at');
+    if (error) { console.error('loadPlayerScores error:', error); return []; }
+    return data || [];
 }
 
 // ═══ CALIBRATION DATA LOADERS ═══

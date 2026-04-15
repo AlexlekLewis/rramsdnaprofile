@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { loadGoalsForPlayer, addGoal, updateGoalProgress, updateGoal, completeGoal, loadFocusAreas, loadNotes, addNote } from "../db/idpDb";
+import { loadCoachAssessment, loadSelfRatings, buildAssessmentSummary } from "../db/assessmentDb";
 import { B, F, sCard } from "../data/theme";
 
 const GOAL_CATEGORIES = [
@@ -11,11 +12,16 @@ const GOAL_CATEGORIES = [
 
 const PRIORITY_LEVELS = { high: { label: 'HIGH', color: B.red }, medium: { label: 'MED', color: B.amb }, low: { label: 'LOW', color: B.grn } };
 
-export default function IDPView({ session, userProfile }) {
+const GAP_COLORS = { aligned: B.grn, slight: B.amb, significant: B.red };
+const GAP_LABELS = { aligned: 'Aligned', slight: 'Slight Gap', significant: 'Big Gap' };
+
+export default function IDPView({ session, userProfile, playerId }) {
     const [goals, setGoals] = useState([]);
     const [focusAreas, setFocusAreas] = useState([]);
     const [notes, setNotes] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [assessmentSummary, setAssessmentSummary] = useState([]);
+    const [assessmentLoaded, setAssessmentLoaded] = useState(false);
 
     const [newGoal, setNewGoal] = useState("");
     const [newGoalCategory, setNewGoalCategory] = useState("technical");
@@ -31,7 +37,10 @@ export default function IDPView({ session, userProfile }) {
     const [reflectionNote, setReflectionNote] = useState("");
 
     // Goal filter
-    const [goalFilter, setGoalFilter] = useState("all"); // all | technical | mental | physical | tactical | completed
+    const [goalFilter, setGoalFilter] = useState("all");
+
+    // Section collapse
+    const [showAssessment, setShowAssessment] = useState(true);
 
     const programId = null;
 
@@ -49,6 +58,22 @@ export default function IDPView({ session, userProfile }) {
         }).catch(err => console.error("Error loading IDP:", err))
             .finally(() => setLoading(false));
     }, [userProfile?.id]);
+
+    // Load assessment data (uses players.id, not auth_user_id)
+    useEffect(() => {
+        if (!playerId) return;
+        Promise.all([
+            loadCoachAssessment(playerId).catch(() => null),
+            loadSelfRatings(playerId).catch(() => ({ selfRatings: {}, role: 'Batter' }))
+        ]).then(([coachData, { selfRatings }]) => {
+            const summary = buildAssessmentSummary(coachData, selfRatings);
+            setAssessmentSummary(summary);
+            setAssessmentLoaded(true);
+        }).catch(err => {
+            console.warn("Assessment load failed:", err.message);
+            setAssessmentLoaded(true);
+        });
+    }, [playerId]);
 
     const showFeedback = (type, text, duration = 3000) => {
         setFeedback({ type, text });
@@ -85,7 +110,6 @@ export default function IDPView({ session, userProfile }) {
             try {
                 const updated = await updateGoalProgress(id, val);
                 setGoals(prev => prev.map(g => g.id === id ? updated : g));
-                // Prompt completion when hitting 100%
                 if (val >= 100) setCompletingId(id);
             } catch (e) { console.error(e); }
         }, 500);
@@ -130,9 +154,76 @@ export default function IDPView({ session, userProfile }) {
         return g.category === goalFilter && g.status !== 'completed';
     });
 
-    const SectionH = ({ title }) => (
-        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F, marginBottom: 16 }}>{title}</div>
+    const SectionH = ({ title, subtitle, toggle, isOpen }) => (
+        <div
+            onClick={toggle}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, cursor: toggle ? 'pointer' : 'default' }}
+        >
+            <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>{title}</div>
+                {subtitle && <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 2 }}>{subtitle}</div>}
+            </div>
+            {toggle && (
+                <div style={{ fontSize: 10, color: B.g400, fontFamily: F, fontWeight: 600 }}>
+                    {isOpen ? 'Hide' : 'Show'}
+                </div>
+            )}
+        </div>
     );
+
+    // Assessment bar component
+    const DomainBar = ({ domain }) => {
+        const hasCoach = domain.coachAvg != null;
+        const hasSelf = domain.selfAvg != null;
+        if (!hasCoach && !hasSelf) return null;
+
+        const gapColor = GAP_COLORS[domain.gapLevel] || B.g400;
+
+        return (
+            <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: B.g600, fontFamily: F }}>{domain.shortLabel}</div>
+                    {domain.gap != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: gapColor }} />
+                            <span style={{ fontSize: 9, fontWeight: 700, color: gapColor, fontFamily: F }}>{GAP_LABELS[domain.gapLevel]}</span>
+                            <span style={{ fontSize: 9, color: B.g400, fontFamily: F }}>
+                                ({domain.gap > 0 ? '+' : ''}{domain.gap})
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Coach bar */}
+                {hasCoach && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <div style={{ fontSize: 8, fontWeight: 700, color: B.bl, fontFamily: F, width: 40, textAlign: 'right' }}>COACH</div>
+                        <div style={{ flex: 1, height: 8, background: B.g100, borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${(domain.coachAvg / 5) * 100}%`, height: '100%', background: B.bl, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F, width: 28, textAlign: 'right' }}>{domain.coachAvg}</div>
+                    </div>
+                )}
+
+                {/* Self bar */}
+                {hasSelf && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 8, fontWeight: 700, color: B.pk, fontFamily: F, width: 40, textAlign: 'right' }}>SELF</div>
+                        <div style={{ flex: 1, height: 8, background: B.g100, borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${(domain.selfAvg / 5) * 100}%`, height: '100%', background: B.pk, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: B.pk, fontFamily: F, width: 28, textAlign: 'right' }}>{domain.selfAvg}</div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Overall PDI-like score from coach averages
+    const overallCoach = assessmentSummary.filter(d => d.coachAvg != null);
+    const overallAvg = overallCoach.length > 0
+        ? +(overallCoach.reduce((s, d) => s + d.coachAvg, 0) / overallCoach.length).toFixed(1)
+        : null;
 
     return (
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -140,6 +231,90 @@ export default function IDPView({ session, userProfile }) {
             {feedback && (
                 <div style={{ padding: '10px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, fontFamily: F, background: feedback.type === 'ok' ? `${B.grn}15` : '#fee2e2', color: feedback.type === 'ok' ? B.grn : '#dc2626', border: `1px solid ${feedback.type === 'ok' ? `${B.grn}30` : '#fca5a5'}` }}>
                     {feedback.text}
+                </div>
+            )}
+
+            {/* ═══ ASSESSMENT OVERVIEW (SAGI) ═══ */}
+            {assessmentLoaded && assessmentSummary.some(d => d.coachAvg != null || d.selfAvg != null) && (
+                <div style={{ ...sCard, padding: 20 }}>
+                    <SectionH
+                        title="Assessment Overview"
+                        subtitle="Coach ratings vs your self-assessment"
+                        toggle={() => setShowAssessment(!showAssessment)}
+                        isOpen={showAssessment}
+                    />
+
+                    {showAssessment && (
+                        <>
+                            {/* Overall score card */}
+                            {overallAvg != null && (
+                                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                                    <div style={{
+                                        width: 56, height: 56, borderRadius: '50%',
+                                        background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        flexShrink: 0,
+                                    }}>
+                                        <span style={{ fontSize: 18, fontWeight: 800, color: B.w, fontFamily: F }}>{overallAvg}</span>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>Overall Domain Average</div>
+                                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 2, lineHeight: 1.4 }}>
+                                            Based on coach assessment across {overallCoach.length} domains. Your self-assessment is shown alongside to highlight perception gaps.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* SAGI Legend */}
+                            <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: 2, background: B.bl }} />
+                                    <span style={{ fontSize: 9, color: B.g600, fontFamily: F }}>Coach Rating</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: 2, background: B.pk }} />
+                                    <span style={{ fontSize: 9, color: B.g600, fontFamily: F }}>Self Rating</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: B.grn }} />
+                                    <span style={{ fontSize: 9, color: B.g600, fontFamily: F }}>Aligned (gap &lt;0.5)</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: B.red }} />
+                                    <span style={{ fontSize: 9, color: B.g600, fontFamily: F }}>Big gap (&gt;1.0)</span>
+                                </div>
+                            </div>
+
+                            {/* Domain bars */}
+                            {assessmentSummary.map(d => <DomainBar key={d.key} domain={d} />)}
+
+                            {/* SAGI insight */}
+                            {assessmentSummary.some(d => d.gapLevel === 'significant') && (
+                                <div style={{ padding: 12, borderRadius: 8, background: `${B.amb}08`, border: `1px solid ${B.amb}25`, marginTop: 4 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: B.amb, fontFamily: F, marginBottom: 4 }}>Self-Awareness Insight</div>
+                                    <div style={{ fontSize: 11, color: B.g600, fontFamily: F, lineHeight: 1.5 }}>
+                                        {assessmentSummary.filter(d => d.gapLevel === 'significant').map(d => {
+                                            const dir = d.gap > 0 ? 'higher than' : 'lower than';
+                                            return `Your ${d.shortLabel} self-rating is ${dir} your coach's assessment.`;
+                                        }).join(' ')}
+                                        {' '}This is normal and helps focus your development — discuss with your coach.
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* Assessment not yet available */}
+            {assessmentLoaded && !assessmentSummary.some(d => d.coachAvg != null) && (
+                <div style={{ ...sCard, padding: 20, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📊</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 4 }}>Assessment Coming Soon</div>
+                    <div style={{ fontSize: 11, color: B.g400, fontFamily: F, lineHeight: 1.5 }}>
+                        Your coach assessment results will appear here after assessment week. In the meantime, set your goals below.
+                    </div>
                 </div>
             )}
 
@@ -160,7 +335,6 @@ export default function IDPView({ session, userProfile }) {
                         </button>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        {/* Category selector */}
                         <div style={{ display: 'flex', gap: 4 }}>
                             {GOAL_CATEGORIES.map(c => (
                                 <button key={c.id} onClick={() => setNewGoalCategory(c.id)}
@@ -169,7 +343,6 @@ export default function IDPView({ session, userProfile }) {
                                 </button>
                             ))}
                         </div>
-                        {/* Target date */}
                         <input type="date" value={newGoalDate} onChange={e => setNewGoalDate(e.target.value)}
                             style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 10, fontFamily: F, color: B.g600, outline: 'none' }} />
                     </div>
@@ -214,10 +387,18 @@ export default function IDPView({ session, userProfile }) {
                                     )}
 
                                     {g.status !== 'completed' && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ marginBottom: 4 }}>
+                                            {/* Visual progress bar */}
+                                            <div style={{ height: 6, background: B.g100, borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                                                <div style={{
+                                                    width: `${g.progress || 0}%`, height: '100%',
+                                                    background: (g.progress || 0) >= 75 ? B.grn : (g.progress || 0) >= 40 ? B.amb : cat?.color || B.bl,
+                                                    borderRadius: 3, transition: 'width 0.3s ease'
+                                                }} />
+                                            </div>
                                             <input type="range" min="0" max="100" value={g.progress || 0}
                                                 onChange={e => handleUpdateProgress(g.id, parseInt(e.target.value))}
-                                                style={{ flex: 1, accentColor: cat?.color || B.bl }} />
+                                                style={{ width: '100%', accentColor: cat?.color || B.bl }} />
                                         </div>
                                     )}
 

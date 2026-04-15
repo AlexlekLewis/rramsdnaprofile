@@ -5,6 +5,9 @@ import Journal from "./Journal";
 import IDPView from "./IDPView";
 import PlayerDNA from "./PlayerDNA";
 import { loadAttendanceForPlayer } from "../db/observationDb";
+import { loadJournalHistory } from "../db/journalDb";
+import { loadGoalsForPlayer } from "../db/idpDb";
+import { computeGrowthStats } from "../db/assessmentDb";
 import { supabase } from "../supabaseClient";
 
 const PortalHeader = React.memo(({ title, showBack, onBack, onSignOut, userName }) => (
@@ -32,6 +35,7 @@ export default function PlayerPortal() {
     const [recentAtt, setRecentAtt] = useState([]);
     const [playerId, setPlayerId] = useState(null);
     const [programInfo, setProgramInfo] = useState(null);
+    const [growthStats, setGrowthStats] = useState(null);
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -53,6 +57,18 @@ export default function PlayerPortal() {
                 if (!cancelled) setRecentAtt(att.slice(0, 5));
             } catch (err) {
                 console.error("Error loading player dashboard data:", err);
+            }
+            // Load growth stats (goals + journal entries)
+            try {
+                const [goals, journalEntries] = await Promise.all([
+                    loadGoalsForPlayer(session.user.id, null),
+                    loadJournalHistory(session.user.id),
+                ]);
+                if (!cancelled) {
+                    setGrowthStats(computeGrowthStats(goals, journalEntries));
+                }
+            } catch (err) {
+                console.warn("Growth stats load failed:", err.message);
             }
             try {
                 const { data: member } = await supabase.from('program_members').select('role, season').eq('auth_user_id', session.user.id).eq('active', true).maybeSingle();
@@ -83,14 +99,23 @@ export default function PlayerPortal() {
     if (view === "journal") return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
             <PortalHeader title="My Journal" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
-            <Journal session={session} userProfile={userProfile} />
+            <Journal session={session} userProfile={userProfile} playerId={playerId} />
         </div>
     );
 
     if (view === "idp") return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
             <PortalHeader title="My IDP" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
-            <IDPView session={session} userProfile={userProfile} />
+            <IDPView session={session} userProfile={userProfile} playerId={playerId} />
+        </div>
+    );
+
+    // ── Stat card helper ──
+    const StatCard = ({ value, label, color, icon }) => (
+        <div style={{ ...sCard, flex: 1, padding: 14, marginBottom: 0, textAlign: 'center', minWidth: 0 }}>
+            <div style={{ fontSize: 10, marginBottom: 4 }}>{icon}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: color || B.nvD, fontFamily: F }}>{value}</div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: B.g400, fontFamily: F, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>{label}</div>
         </div>
     );
 
@@ -115,9 +140,51 @@ export default function PlayerPortal() {
                                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>SEASON</div>
                                 <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>{programInfo.season}</div>
                             </div>}
+                            {growthStats?.streak > 0 && (
+                                <div style={{ background: "rgba(255,130,50,0.2)", padding: '6px 12px', borderRadius: 8 }}>
+                                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>STREAK</div>
+                                    <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>🔥 {growthStats.streak} week{growthStats.streak !== 1 ? 's' : ''}</div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
+
+                {/* ═══ GROWTH STATS ROW ═══ */}
+                {growthStats && (
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+                        <StatCard value={growthStats.totalEntries} label="Journal Entries" color={B.prp} icon="📔" />
+                        <StatCard value={growthStats.activeGoals} label="Active Goals" color={B.bl} icon="🎯" />
+                        <StatCard value={growthStats.completedGoals} label="Goals Done" color={B.grn} icon="✅" />
+                    </div>
+                )}
+
+                {/* ═══ ACTIVE GOAL PROGRESS ═══ */}
+                {growthStats?.topGoals?.length > 0 && (
+                    <div style={{ ...sCard, padding: 16, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: B.nvD, fontFamily: F }}>Goal Progress</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.bl, fontFamily: F, cursor: 'pointer' }} onClick={() => setView('idp')}>View All</div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {growthStats.topGoals.map(g => (
+                                <div key={g.id}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                        <div style={{ fontSize: 11, fontWeight: 600, color: B.nv, fontFamily: F, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.title}</div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, marginLeft: 8 }}>{g.progress || 0}%</div>
+                                    </div>
+                                    <div style={{ height: 6, background: B.g100, borderRadius: 3, overflow: 'hidden' }}>
+                                        <div style={{
+                                            width: `${g.progress || 0}%`, height: '100%',
+                                            background: (g.progress || 0) >= 75 ? B.grn : (g.progress || 0) >= 40 ? B.amb : B.bl,
+                                            borderRadius: 3, transition: 'width 0.4s ease'
+                                        }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* ═══ ACTION TILES ═══ */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
@@ -129,16 +196,16 @@ export default function PlayerPortal() {
                     <div onClick={() => setView('journal')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>📔</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Journal</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Reflect on your sessions</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Weekly reviews & reflections</div>
                     </div>
                     <div onClick={() => setView('idp')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>🎯</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My IDP</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals & coach focus areas</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals, assessment & growth</div>
                     </div>
                 </div>
 
-                {/* ═══ UPCOMING SESSIONS CARD ═══ */}
+                {/* ═══ RECENT SESSIONS CARD ═══ */}
                 <div style={{ ...sCard, padding: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Recent Sessions</div>

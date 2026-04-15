@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { loadRecentSessionsForPlayer, loadJournalHistory, saveJournalEntry, updateJournalEntry } from "../db/journalDb";
+import { calculateJournalStreak } from "../db/assessmentDb";
 import { B, F, sCard } from "../data/theme";
 
 const MOODS = [
@@ -9,9 +10,18 @@ const MOODS = [
 ];
 
 const TABS = [
-    { id: 'new', label: 'New Entry' },
+    { id: 'weekly', label: 'Weekly Review' },
+    { id: 'new', label: 'Session Entry' },
     { id: 'freeform', label: 'Free Write' },
     { id: 'history', label: 'History' },
+];
+
+// Fixed weekly review questions — appear every week
+const WEEKLY_CORE_QUESTIONS = [
+    "What did I do well this week?",
+    "What was my biggest challenge this week?",
+    "What's my #1 focus for next week?",
+    "One thing I learned about my game this week",
 ];
 
 // Word count helper
@@ -21,6 +31,13 @@ const wordCount = (text) => (text || '').trim().split(/\s+/).filter(Boolean).len
 const isEditable = (createdAt) => {
     if (!createdAt) return false;
     return (Date.now() - new Date(createdAt).getTime()) < 24 * 60 * 60 * 1000;
+};
+
+// Get current week number of the year
+const getCurrentWeekNumber = () => {
+    const now = new Date();
+    const jan1 = new Date(now.getFullYear(), 0, 1);
+    return Math.ceil(((now - jan1) / 86400000 + jan1.getDay() + 1) / 7);
 };
 
 // Group entries by week/month
@@ -40,11 +57,12 @@ const groupByDate = (entries) => {
     return groups;
 };
 
-export default function Journal({ session, userProfile }) {
-    const [activeTab, setActiveTab] = useState("new");
+export default function Journal({ session, userProfile, playerId }) {
+    const [activeTab, setActiveTab] = useState("weekly");
     const [recentSessions, setRecentSessions] = useState([]);
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [streak, setStreak] = useState(0);
 
     // Session-linked entry state
     const [selectedSessId, setSelectedSessId] = useState("");
@@ -57,6 +75,12 @@ export default function Journal({ session, userProfile }) {
     const [freeText, setFreeText] = useState("");
     const [freeTitle, setFreeTitle] = useState("");
     const [freeMood, setFreeMood] = useState(null);
+
+    // Weekly review state
+    const [weeklyAnswers, setWeeklyAnswers] = useState({});
+    const [weeklyMood, setWeeklyMood] = useState(null);
+    const [effortRating, setEffortRating] = useState(0);
+    const [weeklyAlreadyDone, setWeeklyAlreadyDone] = useState(false);
 
     // Edit state
     const [editingId, setEditingId] = useState(null);
@@ -76,18 +100,79 @@ export default function Journal({ session, userProfile }) {
             setRecentSessions(availableSess);
             setHistory(histData);
             if (availableSess.length > 0) setSelectedSessId(availableSess[0].id);
+
+            // Calculate streak
+            setStreak(calculateJournalStreak(histData));
+
+            // Check if weekly review already done this week
+            const weekNum = getCurrentWeekNumber();
+            const year = new Date().getFullYear();
+            const thisWeekReview = histData.find(h =>
+                h.entry_type === 'weekly_review' &&
+                h.week_number === weekNum &&
+                new Date(h.created_at).getFullYear() === year
+            );
+            setWeeklyAlreadyDone(!!thisWeekReview);
         }).catch(err => console.error("Error loading journal data:", err))
             .finally(() => setLoading(false));
     }, [userProfile?.id]);
 
+    // Get coach-set prompts from the most recent session
+    const latestSessionWithPrompts = recentSessions.find(s => s.journal_questions?.length > 0) || null;
+    const coachPrompts = latestSessionWithPrompts?.journal_questions || [];
+
+    // Combine fixed + coach questions for weekly review
+    const weeklyQuestions = [
+        ...WEEKLY_CORE_QUESTIONS,
+        ...coachPrompts.map(q => `Coach Focus: ${q}`),
+    ];
+
     const activeSess = recentSessions.find(s => s.id === selectedSessId);
-    const questions = activeSess?.journal_questions?.length > 0
+    const sessionQuestions = activeSess?.journal_questions?.length > 0
         ? activeSess.journal_questions
         : ["What went well today?", "What was challenging?", "What's my focus for next session?"];
 
     const showToast = (type, text, duration = 3000) => {
         setSaveMsg({ type, text });
         setTimeout(() => setSaveMsg(null), duration);
+    };
+
+    // Save weekly review
+    const handleSaveWeekly = async () => {
+        setSaving(true);
+        try {
+            const allAnswers = weeklyQuestions.map(q => ({ q, a: weeklyAnswers[q] || '' }));
+
+            // Save as weekly_review type with effort_rating as a proper DB column
+            const saved = await saveJournalEntry({
+                session_id: latestSessionWithPrompts?.id || null,
+                program_id: latestSessionWithPrompts?.program_id || null,
+                answers: allAnswers,
+                mood: weeklyMood,
+                _entryType: 'weekly_review',
+                _weekNumber: getCurrentWeekNumber(),
+                _effortRating: effortRating || null,
+            }, userProfile.id);
+
+            showToast('ok', 'Weekly review saved!');
+            const savedEntry = {
+                ...saved,
+                entry_type: 'weekly_review',
+                week_number: getCurrentWeekNumber(),
+                sessions: latestSessionWithPrompts ? { title: latestSessionWithPrompts.title, session_date: latestSessionWithPrompts.session_date } : null,
+                programs: latestSessionWithPrompts?.programs || null,
+            };
+            setHistory([savedEntry, ...history]);
+            setWeeklyAnswers({});
+            setWeeklyMood(null);
+            setEffortRating(0);
+            setWeeklyAlreadyDone(true);
+            setStreak(prev => prev + 1);
+            setActiveTab("history");
+        } catch (err) {
+            console.error(err);
+            showToast('err', 'Failed to save — check your connection', 5000);
+        } finally { setSaving(false); }
     };
 
     // Save session-linked entry
@@ -98,7 +183,7 @@ export default function Journal({ session, userProfile }) {
             const entry = {
                 session_id: selectedSessId,
                 program_id: activeSess.program_id,
-                answers: questions.map(q => ({ q, a: answers[q] || '' })),
+                answers: sessionQuestions.map(q => ({ q, a: answers[q] || '' })),
                 mood: mood,
             };
             await saveJournalEntry(entry, userProfile.id);
@@ -147,7 +232,7 @@ export default function Journal({ session, userProfile }) {
     const startEdit = (entry) => {
         setEditingId(entry.id);
         setEditMood(entry.mood || null);
-        if (entry.session_id) {
+        if (entry.session_id || entry.entry_type === 'weekly_review') {
             const ans = {};
             (entry.answers || []).forEach(a => { ans[a.q] = a.a; });
             setEditAnswers(ans);
@@ -160,7 +245,7 @@ export default function Journal({ session, userProfile }) {
         setSaving(true);
         try {
             const updates = { mood: editMood };
-            if (entry.session_id) {
+            if (entry.session_id || entry.entry_type === 'weekly_review') {
                 const qs = (entry.answers || []).map(a => a.q);
                 updates.answers = qs.map(q => ({ q, a: editAnswers[q] || '' }));
             } else {
@@ -196,14 +281,57 @@ export default function Journal({ session, userProfile }) {
 
     const TabBtn = ({ id, label }) => (
         <button onClick={() => setActiveTab(id)} style={{
-            flex: 1, padding: '12px', border: 'none', background: 'transparent',
+            flex: 1, padding: '10px 8px', border: 'none', background: 'transparent',
             borderBottom: activeTab === id ? `2px solid ${B.bl}` : `2px solid transparent`,
             color: activeTab === id ? B.bl : B.g400, fontWeight: activeTab === id ? 800 : 600,
-            fontSize: 11, fontFamily: F, cursor: 'pointer', transition: 'all 0.2s'
+            fontSize: 10, fontFamily: F, cursor: 'pointer', transition: 'all 0.2s'
         }}>{label}</button>
     );
 
+    // Effort rating dots (1-5)
+    const EffortDots = ({ value, onChange }) => (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: B.g600, fontFamily: F, marginRight: 4 }}>Effort:</div>
+            {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} onClick={() => onChange(value === n ? 0 : n)}
+                    style={{
+                        width: 32, height: 32, borderRadius: '50%',
+                        border: `2px solid ${value >= n ? B.bl : B.g200}`,
+                        background: value >= n ? B.bl : 'transparent',
+                        color: value >= n ? B.w : B.g400,
+                        fontSize: 12, fontWeight: 800, fontFamily: F,
+                        cursor: 'pointer', transition: 'all 0.15s',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                    {n}
+                </button>
+            ))}
+        </div>
+    );
+
+    // Streak badge
+    const StreakBadge = () => (
+        streak > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 20, background: `${B.org}12`, border: `1.5px solid ${B.org}30` }}>
+                <span style={{ fontSize: 14 }}>🔥</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: B.org, fontFamily: F }}>{streak} week{streak !== 1 ? 's' : ''}</span>
+            </div>
+        ) : null
+    );
+
     const groupedHistory = groupByDate(history);
+
+    const entryTypeLabel = (h) => {
+        if (h.entry_type === 'weekly_review') return 'Weekly Review';
+        if (!h.session_id) return 'Free Write';
+        return 'Session';
+    };
+
+    const entryTypeColor = (h) => {
+        if (h.entry_type === 'weekly_review') return B.prp;
+        if (!h.session_id) return B.org;
+        return B.bl;
+    };
 
     return (
         <div>
@@ -213,12 +341,70 @@ export default function Journal({ session, userProfile }) {
                     {saveMsg.text}
                 </div>
             )}
-            {/* TABS */}
-            <div style={{ display: 'flex', background: B.w, borderBottom: `1px solid ${B.g200}` }}>
+
+            {/* STREAK + TABS */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 0' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Week {getCurrentWeekNumber()} · {history.length} entries
+                </div>
+                <StreakBadge />
+            </div>
+
+            <div style={{ display: 'flex', background: B.w, borderBottom: `1px solid ${B.g200}`, marginTop: 8 }}>
                 {TABS.map(t => <TabBtn key={t.id} id={t.id} label={t.label} />)}
             </div>
 
             <div style={{ padding: 16 }}>
+
+                {/* ═══ WEEKLY REVIEW ═══ */}
+                {activeTab === "weekly" && (
+                    <div style={{ ...sCard, padding: 20 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Weekly Review</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.prp, background: `${B.prp}12`, padding: '3px 10px', borderRadius: 12, fontFamily: F }}>
+                                Week {getCurrentWeekNumber()}
+                            </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: B.g400, fontFamily: F, marginBottom: 16 }}>
+                            Reflect on your week — core questions plus any coach focus areas.
+                        </div>
+
+                        {weeklyAlreadyDone ? (
+                            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                                <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: B.grn, fontFamily: F, marginBottom: 4 }}>Weekly review complete!</div>
+                                <div style={{ fontSize: 11, color: B.g400, fontFamily: F }}>Check back next week. Keep building that streak.</div>
+                            </div>
+                        ) : (
+                            <>
+                                <MoodPicker value={weeklyMood} onChange={setWeeklyMood} />
+                                <EffortDots value={effortRating} onChange={setEffortRating} />
+
+                                {weeklyQuestions.map((q, i) => {
+                                    const isCoachQ = q.startsWith('Coach Focus:');
+                                    return (
+                                        <div key={i} style={{ marginTop: 16 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                                <div style={{ fontSize: 12, fontWeight: 700, color: B.g600, fontFamily: F }}>{q}</div>
+                                                {isCoachQ && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 6px', borderRadius: 6, background: `${B.pk}15`, color: B.pk, fontFamily: F }}>COACH</span>}
+                                            </div>
+                                            <textarea value={weeklyAnswers[q] || ''} onChange={e => setWeeklyAnswers(prev => ({ ...prev, [q]: e.target.value }))}
+                                                placeholder="Write your reflection..." rows={3}
+                                                style={{ width: '100%', padding: '12px 16px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 13, fontFamily: F, background: B.g50, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }} />
+                                            <WordCounter text={weeklyAnswers[q]} />
+                                        </div>
+                                    );
+                                })}
+
+                                <button onClick={handleSaveWeekly} disabled={saving}
+                                    style={{ width: '100%', marginTop: 16, padding: '14px 20px', borderRadius: 8, border: 'none', background: `linear-gradient(135deg, ${B.prp}, ${B.pk})`, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: saving ? 'default' : 'pointer', letterSpacing: 0.5, opacity: saving ? 0.7 : 1 }}>
+                                    {saving ? 'SAVING...' : 'SAVE WEEKLY REVIEW'}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
+
                 {/* ═══ SESSION-LINKED ENTRY ═══ */}
                 {activeTab === "new" && (
                     <div style={{ ...sCard, padding: 20 }}>
@@ -241,7 +427,7 @@ export default function Journal({ session, userProfile }) {
 
                                 <MoodPicker value={mood} onChange={setMood} />
 
-                                {questions.map((q, i) => (
+                                {sessionQuestions.map((q, i) => (
                                     <div key={i} style={{ marginTop: 16 }}>
                                         <div style={{ fontSize: 12, fontWeight: 700, color: B.g600, fontFamily: F, marginBottom: 8 }}>{q}</div>
                                         <textarea value={answers[q] || ''} onChange={e => setAnswers(prev => ({ ...prev, [q]: e.target.value }))}
@@ -289,7 +475,7 @@ export default function Journal({ session, userProfile }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         {history.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '32px 0', color: B.g400, fontSize: 13, fontFamily: F }}>
-                                No journal entries yet. Start writing to build your reflection habit.
+                                No journal entries yet. Start with a Weekly Review to build your reflection habit.
                             </div>
                         ) : (
                             Object.entries(groupedHistory).map(([groupLabel, entries]) => (
@@ -300,20 +486,30 @@ export default function Journal({ session, userProfile }) {
                                             const isEdit = editingId === h.id;
                                             const canEdit = isEditable(h.created_at);
                                             const moodObj = MOODS.find(m => m.id === h.mood);
-                                            const isFreeForm = !h.session_id;
+                                            const isFreeForm = !h.session_id && h.entry_type !== 'weekly_review';
+                                            const typeColor = entryTypeColor(h);
 
                                             return (
-                                                <div key={h.id} style={{ ...sCard, padding: 16, marginBottom: 0 }}>
+                                                <div key={h.id} style={{ ...sCard, padding: 16, marginBottom: 0, borderLeft: `3px solid ${typeColor}` }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                                                         <div>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                                 <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>
-                                                                    {isFreeForm ? (h.answers?.[0]?.q || 'Free Write') : (h.sessions?.title || 'Session')}
+                                                                    {h.entry_type === 'weekly_review'
+                                                                        ? `Week ${h.week_number || ''} Review`
+                                                                        : isFreeForm
+                                                                            ? (h.answers?.[0]?.q || 'Free Write')
+                                                                            : (h.sessions?.title || 'Session')}
                                                                 </div>
+                                                                <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 6px', borderRadius: 6, background: `${typeColor}15`, color: typeColor, fontFamily: F }}>
+                                                                    {entryTypeLabel(h)}
+                                                                </span>
                                                                 {moodObj && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: `${moodObj.color}15`, color: moodObj.color, fontWeight: 600 }}>{moodObj.icon}</span>}
                                                             </div>
                                                             <div style={{ fontSize: 11, color: B.g400, fontFamily: F, marginTop: 2 }}>
-                                                                {isFreeForm ? new Date(h.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : `${h.sessions?.session_date || ''} · ${h.programs?.name || ''}`}
+                                                                {isFreeForm
+                                                                    ? new Date(h.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+                                                                    : `${h.sessions?.session_date || new Date(h.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} · ${h.programs?.name || ''}`}
                                                             </div>
                                                         </div>
                                                         {canEdit && !isEdit && (
