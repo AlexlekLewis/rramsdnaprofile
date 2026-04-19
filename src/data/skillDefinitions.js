@@ -560,6 +560,15 @@ const C_PHASE = {
     "DEATH (17-20)": { 1: "Cannot be trusted at death. Liability.", 2: "Struggles under scoreboard pressure.", 3: "Adequate death performer. Holds own.", 4: "Effective finisher or death bowler. Makes a difference.", 5: "Elite death performer. Match-winner in crunch moments." }
 };
 
+// ═══ ATHLETIC FIELDING DEFINITIONS ═══
+const C_FLD = {
+    "Ground Fielding": { 1: "Poor technique. Misfields regularly. No presence in the field.", 2: "Basic ground fielding. Slow to ball. Lets easy runs through.", 3: "Reliable under moderate pressure. Clean pick-up and return.", 4: "Sharp ground fielding. Quick to ball, clean hands, saves runs.", 5: "Elite. Exceptional range, anticipation, and conversion to run-outs." },
+    "Catching Reliability": { 1: "Drops regularly. Cannot be trusted in catching positions.", 2: "Takes straightforward catches but drops under pressure.", 3: "Reliable in standard positions. Takes most regulation chances.", 4: "Safe pair of hands. Rarely drops. Confident in pressure catches.", 5: "Elite catcher. Takes everything. Pulls off exceptional catches." },
+    "Close / Sharp Catching": { 1: "Cannot be placed in close-catching positions.", 2: "Struggles with reflex catches. Slow reactions.", 3: "Adequate at slip/close catching. Takes some sharp chances.", 4: "Strong reflex catcher. Quick hands, soft reception.", 5: "Elite close catcher. Outstanding reflexes and anticipation." },
+    "Throwing Accuracy & Speed": { 1: "Weak arm. Inaccurate throws. No threat to batters.", 2: "Below average arm. Occasional good throw.", 3: "Accurate from standard range. Hits stumps under moderate pressure.", 4: "Strong, accurate arm. Quick release. Creates run-out chances.", 5: "Elite arm. Flat, fast, accurate from any angle. Game-changing throws." },
+    "Running Between Wickets": { 1: "Slow. Poor calling. Causes run-outs. No urgency.", 2: "Below average speed. Poor turning. Misses easy runs.", 3: "Good runner. Turns well. Backs up consistently.", 4: "Quick between wickets. Sharp turns. Creates pressure on fielders.", 5: "Elite runner. Exceptional speed, turning, and calling. Steals extra runs." },
+};
+
 // ═══ BUILD COMBINED DEFINITION OBJECTS ═══
 export const PLAYER_DEFS = { ...P_BAT, ...P_PACE, ...P_SPIN, ...P_KEEP, ...P_IQ, ...P_MN, ...P_PHYS, ...P_PHASE };
-export const COACH_DEFS = { ...C_BAT, ...C_PACE, ...C_SPIN, ...C_KEEP, ...C_IQ, ...C_MN, ...C_PHYS, ...C_PHASE };
+export const COACH_DEFS = { ...C_BAT, ...C_PACE, ...C_SPIN, ...C_KEEP, ...C_IQ, ...C_MN, ...C_PHYS, ...C_PHASE, ...C_FLD };

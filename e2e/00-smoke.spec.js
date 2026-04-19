@@ -49,7 +49,7 @@ test.describe('Smoke Tests — App Loads', () => {
     await page.goto('/?join=player', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    await expect(page.locator('text=Create your player account')).toBeVisible();
+    await expect(page.locator('text=Create your account')).toBeVisible();
     await expect(page.locator(SEL.regCodeInput)).toBeVisible();
     await expect(page.locator(SEL.regNameInput)).toBeVisible();
     await expect(page.locator(SEL.regUsernameInput)).toBeVisible();
@@ -60,7 +60,7 @@ test.describe('Smoke Tests — App Loads', () => {
     await page.goto('/?join=coach', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    await expect(page.locator('text=Create your coach account')).toBeVisible();
+    await expect(page.locator('text=Create your account')).toBeVisible();
     await expect(page.locator(SEL.createAccountButton)).toBeVisible();
   });
 

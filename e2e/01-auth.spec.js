@@ -149,7 +149,7 @@ test.describe('1.3 — Auth Screen Switching', () => {
   test('?join=coach shows coach label', async ({ page }) => {
     await page.goto('/?join=coach', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
-    await expect(page.locator('text=Create your coach account')).toBeVisible();
+    await expect(page.locator('text=Create your account')).toBeVisible();
   });
 
   test('switching to login clears errors', async ({ page }) => {

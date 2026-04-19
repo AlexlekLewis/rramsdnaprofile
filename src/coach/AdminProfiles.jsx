@@ -4,6 +4,7 @@ import { B, F, sCard, getDkWrap } from "../data/theme";
 import { ROLES } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
 import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortPlayer, updateCohortPlayer } from "../db/adminDb";
+import { getAge } from "../engine/ratingEngine";
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
@@ -112,7 +113,7 @@ export default function AdminProfiles() {
                 const member = (members || []).find(m => m.auth_user_id === p.auth_user_id);
                 return {
                     id: p.id, dnaId: p.id, cohortId: c.id || null,
-                    name: p.name, dob: p.dob || c.dob || app.dob, age: c.age || app.age || null,
+                    name: p.name, dob: p.dob || c.dob || app.dob, age: getAge(p.dob) || c.age || app.age || null,
                     gender: p.gender || c.gender, suburb: c.suburb || app.suburb || null,
                     club: p.club || c.club || app.club,
                     email: p.email || c.email || app.email, playerEmail: c.player_email, playerPhone: c.player_phone, phone: c.phone || app.phone,
@@ -175,9 +176,11 @@ export default function AdminProfiles() {
                 });
             }
             if (profile.dnaId) {
+                // Players table is the source of truth — write all editable DNA fields here
                 await updatePlayer(profile.dnaId, {
                     name: editData.name, club: editData.club,
                     role: editData.role || undefined,
+                    gender: editData.gender || undefined,
                 });
             }
             setEditingId(null);

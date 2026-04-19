@@ -808,6 +808,7 @@ export default function PlayerOnboarding() {
                             } catch (clientErr) {
                                 console.error('Client-side fallback also failed:', clientErr.message);
                                 // Last resort: try the simple v1 RPC (just flips submitted flag, no data save)
+                                // Also update user_profiles.submitted so portal routing works
                                 if (draftId && activeUserId) {
                                     try {
                                         const { data: v1Result, error: v1Err } = await supabase.rpc('submit_player_profile', {
@@ -815,6 +816,12 @@ export default function PlayerOnboarding() {
                                         });
                                         if (!v1Err && v1Result?.success) {
                                             console.log('v1 RPC succeeded (submitted flag only)');
+                                            // Update user_profiles.submitted for portal routing (non-blocking)
+                                            try {
+                                                await supabase.from('user_profiles').update({ submitted: true }).eq('id', activeUserId);
+                                            } catch (upErr) {
+                                                console.warn('user_profiles update after v1 RPC failed (non-blocking):', upErr.message);
+                                            }
                                             submitSuccess = true;
                                         }
                                     } catch (v1RpcErr) {

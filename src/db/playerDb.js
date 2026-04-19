@@ -44,10 +44,14 @@ export async function loadPlayersFromDB() {
             cd = {
                 batA: ass.batting_archetype, bwlA: ass.bowling_archetype, narrative: ass.narrative, sqRec: ass.squad_rec,
                 pl_explore: ass.plan_explore, pl_challenge: ass.plan_challenge, pl_execute: ass.plan_execute,
+                overall_batting: ass.overall_batting || null, overall_rating: ass.overall_rating || null,
+                batting_qualities: ass.batting_qualities || null,
+                _playerVoice: ass.player_voice || null,
                 ...Object.fromEntries((ass.strengths || []).map((s, i) => [`str${i + 1}`, s])),
                 ...Object.fromEntries((ass.priorities || []).map((s, i) => [`pri${i + 1}`, s])),
                 ...(ass.phase_ratings || {}), ...(ass.tech_primary || {}), ...(ass.tech_secondary || {}),
-                ...(ass.game_iq || {}), ...(ass.mental || {}), ...(ass.physical || {})
+                ...(ass.game_iq || {}), ...(ass.mental || {}), ...(ass.physical || {}),
+                ...(ass.fielding || {})
             };
         }
         return {
@@ -424,9 +428,10 @@ export async function saveAssessmentToDB(playerId, cd) {
     const strengths = [cd.str1, cd.str2, cd.str3].filter(Boolean);
     const priorities = [cd.pri1, cd.pri2, cd.pri3].filter(Boolean);
 
-    // ── Auto-calculate status ──
-    const ratedSkills = [...Object.values(tech_primary), ...Object.values(tech_secondary)].filter(v => v > 0).length;
-    const status = (ratedSkills > 0 && cd.narrative && strengths.length > 0) ? 'complete' : 'draft';
+    // ── Auto-calculate status (covers ALL rated domains including fielding) ──
+    const allRatingKeys = [...Object.keys(tech_primary), ...Object.keys(tech_secondary), ...Object.keys(game_iq), ...Object.keys(mental), ...Object.keys(physical), ...Object.keys(fielding)];
+    const ratedCount = allRatingKeys.filter(k => cd[k] > 0).length;
+    const status = (ratedCount > 0 && cd.narrative && strengths.length > 0) ? 'complete' : 'draft';
 
     const row = {
         player_id: playerId, coach_id: session?.user?.id || null,
@@ -436,6 +441,7 @@ export async function saveAssessmentToDB(playerId, cd) {
         narrative: cd.narrative || null, strengths, priorities,
         plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
         squad_rec: cd.sqRec || null,
+        // Use ?? null (not || null) to preserve score of 0
         overall_batting: cd._overallBatting ?? null,
         overall_rating: cd._overallRating ?? null,
         batting_qualities: cd._battingQualities ?? null,
