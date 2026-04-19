@@ -1,5 +1,5 @@
 // ═══ ADMIN DASHBOARD — Cohort Overview, Rankings, Engagement, Squads ═══
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useAuth } from "../context/AuthContext";
 
 import { B, F, sCard, getDkWrap, isDesktop } from "../data/theme";
@@ -33,10 +33,14 @@ const MetricCard = ({ label, value, sub, color }) => (
 
 const TABS = [
     { id: 'overview', label: 'Overview' },
+    { id: 'progress', label: 'Assessments' },
     { id: 'rankings', label: 'Rankings' },
     { id: 'engagement', label: 'Engagement' },
     { id: 'reports', label: 'Reports' },
 ];
+
+// Lazy-load the progress view so it doesn't inflate the dashboard bundle
+const AssessmentProgress = React.lazy(() => import('./AssessmentProgress'));
 
 export default function AdminDashboard({ onBack }) {
     const { session, isAdmin } = useAuth();
@@ -275,6 +279,13 @@ export default function AdminDashboard({ onBack }) {
                             </div>
                         </div>
                     </div>
+                )}
+
+                {/* ═══ 3a2: ASSESSMENT PROGRESS (coaches × players × sessions) ═══ */}
+                {tab === 'progress' && (
+                    <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 11, fontFamily: F }}>Loading progress…</div>}>
+                        <AssessmentProgress />
+                    </Suspense>
                 )}
 
                 {/* ═══ 3b: PLAYER RANKINGS TABLE ═══ */}
