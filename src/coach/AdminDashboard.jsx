@@ -34,13 +34,15 @@ const MetricCard = ({ label, value, sub, color }) => (
 const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'progress', label: 'Assessments' },
+    { id: 'reflections', label: 'Reflections' },
     { id: 'rankings', label: 'Rankings' },
     { id: 'engagement', label: 'Engagement' },
     { id: 'reports', label: 'Reports' },
 ];
 
-// Lazy-load the progress view so it doesn't inflate the dashboard bundle
+// Lazy-load heavy sub-views so they don't inflate the dashboard bundle
 const AssessmentProgress = React.lazy(() => import('./AssessmentProgress'));
+const WeeklyReflectionsAdmin = React.lazy(() => import('./WeeklyReflectionsAdmin'));
 
 export default function AdminDashboard({ onBack }) {
     const { session, isAdmin } = useAuth();
@@ -285,6 +287,13 @@ export default function AdminDashboard({ onBack }) {
                 {tab === 'progress' && (
                     <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 11, fontFamily: F }}>Loading progress…</div>}>
                         <AssessmentProgress />
+                    </Suspense>
+                )}
+
+                {/* ═══ 3a3: WEEKLY REFLECTIONS (admin authors 3 Qs per week, players answer) ═══ */}
+                {tab === 'reflections' && (
+                    <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 11, fontFamily: F }}>Loading reflections…</div>}>
+                        <WeeklyReflectionsAdmin />
                     </Suspense>
                 )}
 

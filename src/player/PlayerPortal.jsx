@@ -4,10 +4,12 @@ import { B, F, getDkWrap, sCard } from "../data/theme";
 import Journal from "./Journal";
 import IDPView from "./IDPView";
 import PlayerDNA from "./PlayerDNA";
+import WeeklyReflection from "./WeeklyReflection";
 import { loadAttendanceForPlayer } from "../db/observationDb";
 import { loadJournalHistory } from "../db/journalDb";
 import { loadGoalsForPlayer } from "../db/idpDb";
 import { computeGrowthStats } from "../db/assessmentDb";
+import { loadPendingReflectionsForPlayer } from "../db/reflectionsDb";
 import { supabase } from "../supabaseClient";
 
 const PortalHeader = React.memo(({ title, showBack, onBack, onSignOut, userName }) => (
@@ -31,11 +33,12 @@ const PortalHeader = React.memo(({ title, showBack, onBack, onSignOut, userName 
 
 export default function PlayerPortal() {
     const { session, userProfile, signOut } = useAuth();
-    const [view, setView] = useState("home"); // home | journal | idp | dna
+    const [view, setView] = useState("home"); // home | journal | idp | dna | reflection
     const [recentAtt, setRecentAtt] = useState([]);
     const [playerId, setPlayerId] = useState(null);
     const [programInfo, setProgramInfo] = useState(null);
     const [growthStats, setGrowthStats] = useState(null);
+    const [pendingReflections, setPendingReflections] = useState(0);
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -75,6 +78,11 @@ export default function PlayerPortal() {
                 const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).maybeSingle();
                 if (!cancelled && (member || program)) setProgramInfo({ programName: program?.name || null, season: member?.season || program?.season || null });
             } catch (e) { console.warn('Program info fetch failed:', e.message); }
+            // Pending weekly reflections (badge on tile)
+            try {
+                const pending = await loadPendingReflectionsForPlayer(session.user.id);
+                if (!cancelled) setPendingReflections((pending || []).length);
+            } catch (e) { console.warn('Pending reflections fetch failed:', e.message); }
         }
         fetchData();
         return () => { cancelled = true; };
@@ -107,6 +115,13 @@ export default function PlayerPortal() {
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
             <PortalHeader title="My IDP" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
             <IDPView session={session} userProfile={userProfile} playerId={playerId} />
+        </div>
+    );
+
+    if (view === "reflection") return (
+        <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
+            <PortalHeader title="Weekly Reflection" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <WeeklyReflection session={session} userProfile={userProfile} playerId={playerId} />
         </div>
     );
 
@@ -186,22 +201,34 @@ export default function PlayerPortal() {
                     </div>
                 )}
 
-                {/* ═══ ACTION TILES ═══ */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+                {/* ═══ ACTION TILES (2×2) ═══ */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
                     <div onClick={() => setView('dna')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>🧬</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My DNA</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Your T20 identity & report</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Your T20 identity</div>
+                    </div>
+                    <div onClick={() => setView('reflection')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s', position: 'relative', border: pendingReflections > 0 ? `2px solid ${B.bl}` : sCard.border, background: pendingReflections > 0 ? `linear-gradient(135deg, ${B.bl}08, ${B.pk}08)` : sCard.background }}>
+                        {pendingReflections > 0 && (
+                            <div style={{ position: 'absolute', top: 8, right: 8, background: B.pk, color: B.w, fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, fontFamily: F }}>
+                                {pendingReflections} NEW
+                            </div>
+                        )}
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>💭</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Weekly Reflection</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>
+                            {pendingReflections > 0 ? 'Your coach posted questions' : '3 quick questions each week'}
+                        </div>
                     </div>
                     <div onClick={() => setView('journal')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>📔</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Journal</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Weekly reviews & reflections</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Your thoughts, anytime</div>
                     </div>
                     <div onClick={() => setView('idp')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>🎯</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My IDP</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals, assessment & growth</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals & coach feedback</div>
                     </div>
                 </div>
 
