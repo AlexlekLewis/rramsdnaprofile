@@ -11,11 +11,13 @@ import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE, FLD_ITEMS } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
 import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile } from "../db/playerDb";
+import { loadAssessmentRosters, buildRosterLookup, matchPlayerToSquad } from "../db/sessionDb";
 import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
 import { generateDNAReport } from "../supabaseClient";
 import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
-import { SESSION_GROUPS, getPlayerSessionGroup } from "../data/sessionGroups";
+// NOTE: sessionGroups.js has been replaced by src/db/sessionDb.js (reads from sp_squads live).
+// Kept as a file for historical reference but no longer imported.
 
 // ═══ SHARED UI ═══
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring } from "../shared/FormComponents";
@@ -204,7 +206,14 @@ export default function CoachAssessment() {
     const [rosterSort, setRosterSort] = useState('name'); // name | pdi-desc | ccm-desc | assessed
     const [rosterFilter, setRosterFilter] = useState('all'); // all | assessed | unassessed | role-ids
     const [groupBySession, setGroupBySession] = useState(true); // Default ON for assessment week
+    const [rosterWeek, setRosterWeek] = useSessionState('rra_rosterWeek', 'skill'); // 'skill' | 'gameSense'
+    const [dbRosters, setDbRosters] = useState({ skillWeek: [], gameSenseWeek: [] });
     const saveStatusHook = useSaveStatus();
+
+    // Load live rosters from sp_squads / sp_squad_players. Source of truth.
+    useEffect(() => {
+        loadAssessmentRosters().then(setDbRosters).catch(e => console.error('Roster load failed:', e));
+    }, []);
 
     // ── Admin accounts panel state ──
     const [accounts, setAccounts] = useState([]);
@@ -372,6 +381,18 @@ export default function CoachAssessment() {
                         style={{ padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${groupBySession ? '#6366F1' : B.g200}`, background: groupBySession ? '#6366F110' : 'transparent', fontSize: 9, fontWeight: groupBySession ? 700 : 500, color: groupBySession ? '#6366F1' : B.g400, fontFamily: F, cursor: 'pointer' }}>
                         📅 Session
                     </button>
+                    {groupBySession && (
+                        <div style={{ display: 'inline-flex', borderRadius: 12, border: `1.5px solid ${B.g200}`, overflow: 'hidden' }}>
+                            <button onClick={() => setRosterWeek('skill')}
+                                style={{ padding: '4px 10px', border: 'none', background: rosterWeek === 'skill' ? B.bl : 'transparent', fontSize: 9, fontWeight: rosterWeek === 'skill' ? 800 : 500, color: rosterWeek === 'skill' ? B.w : B.g400, fontFamily: F, cursor: 'pointer' }}>
+                                🏏 Skill Week
+                            </button>
+                            <button onClick={() => setRosterWeek('gameSense')}
+                                style={{ padding: '4px 10px', border: 'none', background: rosterWeek === 'gameSense' ? B.pk : 'transparent', fontSize: 9, fontWeight: rosterWeek === 'gameSense' ? 800 : 500, color: rosterWeek === 'gameSense' ? B.w : B.g400, fontFamily: F, cursor: 'pointer' }}>
+                                🎯 Game Sense
+                            </button>
+                        </div>
+                    )}
                     {[{ id: 'name', label: 'A-Z' }, { id: 'pdi-desc', label: 'PDI ↓' }, { id: 'ccm-desc', label: 'CCM ↓' }, { id: 'assessed', label: 'Assessed' }].map(s => (
                         <button key={s.id} onClick={() => setRosterSort(s.id)}
                             style={{ padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${rosterSort === s.id ? B.bl : B.g200}`, background: rosterSort === s.id ? `${B.bl}10` : 'transparent', fontSize: 9, fontWeight: rosterSort === s.id ? 700 : 500, color: rosterSort === s.id ? B.bl : B.g400, fontFamily: F, cursor: 'pointer' }}>
@@ -450,11 +471,13 @@ export default function CoachAssessment() {
                 if (loading) return <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>Loading players...</div>;
                 if (filteredSorted.length === 0) return <div style={{ textAlign: 'center', padding: '24px 0', color: B.g400, fontSize: 11, fontFamily: F }}>No submitted players yet. Players will appear here once they complete onboarding.</div>;
 
-                // ── SESSION GROUPED VIEW ──
+                // ── SESSION GROUPED VIEW — reads from sp_squads (DB source of truth) ──
                 if (groupBySession) {
-                    const buckets = SESSION_GROUPS.filter(g => g.players.length > 0).map(g => ({
-                        group: g,
-                        players: filteredSorted.filter(p => getPlayerSessionGroup(p.name) === g.id),
+                    const activeRoster = rosterWeek === 'gameSense' ? dbRosters.gameSenseWeek : dbRosters.skillWeek;
+                    const lookup = buildRosterLookup(activeRoster);
+                    const buckets = activeRoster.filter(g => g.playerNames.length > 0).map(g => ({
+                        group: { id: g.id, label: g.label, color: g.color },
+                        players: filteredSorted.filter(p => matchPlayerToSquad(lookup, activeRoster, p.name) === g.id),
                     })).filter(b => b.players.length > 0);
                     const assignedIds = new Set(buckets.flatMap(b => b.players.map(p => p.id)));
                     const ungrouped = filteredSorted.filter(p => !assignedIds.has(p.id));
