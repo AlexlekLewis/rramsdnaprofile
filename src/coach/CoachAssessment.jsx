@@ -21,7 +21,7 @@ import { COACH_DEFS } from "../data/skillDefinitions";
 // Kept as a file for historical reference but no longer imported.
 
 // ═══ SHARED UI ═══
-import { Hdr, SecH, Inp, TArea, AssGrid, Ring } from "../shared/FormComponents";
+import { Hdr, SecH, Inp, TArea, AssGrid, Ring, InfoTooltip } from "../shared/FormComponents";
 import { SaveToast, SaveStatusBar, useSaveStatus } from "../shared/SaveToast";
 
 // ═══ LAZY-LOADED COMPONENTS ═══
@@ -492,11 +492,11 @@ export default function CoachAssessment() {
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F }}>{p.name}</div>
-                                <div style={{ display: "flex", gap: 4 }}>
-                                    {overallScore !== null && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `linear-gradient(135deg,${B.bl}20,${B.pk}20)`, color: B.nvD, border: `1px solid ${B.g200}` }}>⭐ {overallScore}</div>}
-                                    {dn && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${dn.gc}20`, color: dn.gc }}>PDI {dn.pdi.toFixed(1)}</div>}
-                                    {ccmR?.ccm > 0 && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.bl}20`, color: B.bl }}>CCM {ccmR.ccm.toFixed(2)}</div>}
-                                    {dn?.trajectory && <div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.grn}20`, color: B.grn }}>🚀</div>}
+                                <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                                    {overallScore !== null && <InfoTooltip def="overall"><div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `linear-gradient(135deg,${B.bl}20,${B.pk}20)`, color: B.nvD, border: `1px solid ${B.g200}` }}>⭐ {overallScore}</div></InfoTooltip>}
+                                    {dn && <InfoTooltip def="pdi"><div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${dn.gc}20`, color: dn.gc }}>PDI {dn.pdi.toFixed(1)}</div></InfoTooltip>}
+                                    {ccmR?.ccm > 0 && <InfoTooltip def="ccm"><div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.bl}20`, color: B.bl }}>CCM {ccmR.ccm.toFixed(2)}</div></InfoTooltip>}
+                                    {dn?.trajectory && <InfoTooltip def="trajectory"><div style={{ padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 800, fontFamily: F, background: `${B.grn}20`, color: B.grn }}>🚀</div></InfoTooltip>}
                                 </div>
                             </div>
                             <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 1 }}>{a}yo • {br} • {ro?.sh || "?"} • {p.club}</div>
@@ -958,8 +958,8 @@ export default function CoachAssessment() {
                     {/* PDI DETAIL */}
                     <div style={{ background: `linear-gradient(135deg,${B.nvD},${B.nv})`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
                         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-                            <Ring value={dn.pdiPct} size={90} color={dn.gc} label="PDI" />
-                            <Ring value={Math.round(ccmR.ccm * 100)} size={70} color={B.bl} label="CCM" />
+                            <InfoTooltip def="pdi" placement="bottom"><Ring value={dn.pdiPct} size={90} color={dn.gc} label="PDI" /></InfoTooltip>
+                            <InfoTooltip def="ccm" placement="bottom"><Ring value={Math.round(ccmR.ccm * 100)} size={70} color={B.bl} label="CCM" /></InfoTooltip>
                             <div style={{ flex: 1, minWidth: 100 }}>
                                 <div style={{ fontSize: 16, fontWeight: 800, color: dn.gc, fontFamily: F }}>{dn.g}</div>
                                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontFamily: F }}>{dn.tr}/{dn.ti} rated ({dn.cp}%){dn.provisional ? ' • Provisional' : ''}</div>
@@ -970,9 +970,9 @@ export default function CoachAssessment() {
                         <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 6 }}>
                             <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: F, marginBottom: 4 }}>CCM BREAKDOWN</div>
                             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                                <div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>CTI</div><div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{ccmR.cti.toFixed(2)}</div></div>
-                                <div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>ARM</div><div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{ccmR.arm.toFixed(2)}</div></div>
-                                <div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>CCM</div><div style={{ fontSize: 14, fontWeight: 800, color: B.bl, fontFamily: F }}>{ccmR.ccm.toFixed(3)}</div></div>
+                                <InfoTooltip def="cti" placement="bottom"><div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>CTI ⓘ</div><div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{ccmR.cti.toFixed(2)}</div></div></InfoTooltip>
+                                <InfoTooltip def="arm" placement="bottom"><div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>ARM ⓘ</div><div style={{ fontSize: 14, fontWeight: 800, color: B.w, fontFamily: F }}>{ccmR.arm.toFixed(2)}</div></div></InfoTooltip>
+                                <InfoTooltip def="ccm" placement="bottom"><div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>CCM ⓘ</div><div style={{ fontSize: 14, fontWeight: 800, color: B.bl, fontFamily: F }}>{ccmR.ccm.toFixed(3)}</div></div></InfoTooltip>
                                 {ccmR.code && <div><div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: F }}>Top Comp</div><div style={{ fontSize: 10, fontWeight: 600, color: B.w, fontFamily: F }}>{ccmR.code}</div></div>}
                             </div>
                         </div>

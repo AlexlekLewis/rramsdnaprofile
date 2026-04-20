@@ -8,7 +8,7 @@ import { getAge, getBracket } from "../engine/ratingEngine";
 import { loadPlayersFromDB, loadPlayerScores } from "../db/playerDb";
 import { loadSquadGroups, loadSquadAllocations, loadProgramMembers, loadMemberEngagement } from "../db/adminDb";
 import { loadJournalHistory } from "../db/journalDb";
-import { Hdr, SecH } from "../shared/FormComponents";
+import { Hdr, SecH, InfoTooltip } from "../shared/FormComponents";
 
 // ── Tab selector ──
 const TabBar = ({ tabs, active, onSelect }) => (
@@ -23,13 +23,20 @@ const TabBar = ({ tabs, active, onSelect }) => (
 );
 
 // ── Metric card ──
-const MetricCard = ({ label, value, sub, color }) => (
-    <div style={{ ...sCard, padding: 16, textAlign: 'center', flex: '1 1 120px', marginBottom: 0 }}>
-        <div style={{ fontSize: 24, fontWeight: 800, color: color || B.nvD, fontFamily: F }}>{value}</div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>{label}</div>
-        {sub && <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 2 }}>{sub}</div>}
-    </div>
-);
+const MetricCard = ({ label, value, sub, color, tooltip }) => {
+    const labelNode = (
+        <div style={{ fontSize: 10, fontWeight: 700, color: B.g400, fontFamily: F, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>
+            {label}{tooltip ? ' ⓘ' : ''}
+        </div>
+    );
+    return (
+        <div style={{ ...sCard, padding: 16, textAlign: 'center', flex: '1 1 120px', marginBottom: 0 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: color || B.nvD, fontFamily: F }}>{value}</div>
+            {tooltip ? <InfoTooltip def={tooltip}>{labelNode}</InfoTooltip> : labelNode}
+            {sub && <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 2 }}>{sub}</div>}
+        </div>
+    );
+};
 
 const TABS = [
     { id: 'overview', label: 'Overview' },
@@ -199,11 +206,16 @@ export default function AdminDashboard({ onBack }) {
         domainAverages[d.k] = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     });
 
-    const SortHeader = ({ k, label, w }) => (
-        <th onClick={() => toggleSort(k)} style={{ padding: '8px 6px', fontSize: 9, fontWeight: 700, color: sortKey === k ? B.bl : B.g600, cursor: 'pointer', fontFamily: F, textAlign: 'left', width: w, borderBottom: `2px solid ${B.g200}`, userSelect: 'none' }}>
-            {label} {sortKey === k && (sortDir === 'asc' ? '↑' : '↓')}
-        </th>
-    );
+    const SortHeader = ({ k, label, w, tooltip }) => {
+        const inner = (
+            <span>{label}{tooltip ? ' ⓘ' : ''} {sortKey === k && (sortDir === 'asc' ? '↑' : '↓')}</span>
+        );
+        return (
+            <th onClick={() => toggleSort(k)} style={{ padding: '8px 6px', fontSize: 9, fontWeight: 700, color: sortKey === k ? B.bl : B.g600, cursor: 'pointer', fontFamily: F, textAlign: 'left', width: w, borderBottom: `2px solid ${B.g200}`, userSelect: 'none' }}>
+                {tooltip ? <InfoTooltip def={tooltip}>{inner}</InfoTooltip> : inner}
+            </th>
+        );
+    };
 
     return (
         <div style={{ minHeight: '100vh', background: B.g50, fontFamily: F }}>
@@ -225,8 +237,8 @@ export default function AdminDashboard({ onBack }) {
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
                             <MetricCard label="Total Players" value={totalPlayers} color={B.nvD} />
                             <MetricCard label="Assessed" value={assessedCount} sub={`${totalPlayers - assessedCount} pending`} color={B.grn} />
-                            <MetricCard label="Avg PDI" value={avgPDI.toFixed(2)} color={B.pk} />
-                            <MetricCard label="Avg CCM" value={avgCCM.toFixed(2)} color={B.bl} />
+                            <MetricCard label="Avg PDI" value={avgPDI.toFixed(2)} color={B.pk} tooltip="pdi" />
+                            <MetricCard label="Avg CCM" value={avgCCM.toFixed(2)} color={B.bl} tooltip="ccm" />
                             <MetricCard label="Completion" value={`${completionRate}%`} color={completionRate >= 80 ? B.grn : B.amb} />
                         </div>
 
@@ -340,8 +352,8 @@ export default function AdminDashboard({ onBack }) {
                                         <SortHeader k="name" label="Name" />
                                         <SortHeader k="role" label="Role" w={60} />
                                         <SortHeader k="age" label="Age" w={40} />
-                                        <SortHeader k="pdi" label="PDI" w={50} />
-                                        <SortHeader k="ccm" label="CCM" w={50} />
+                                        <SortHeader k="pdi" label="PDI" w={50} tooltip="pdi" />
+                                        <SortHeader k="ccm" label="CCM" w={50} tooltip="ccm" />
                                         <th style={{ padding: '8px 6px', fontSize: 9, fontWeight: 700, color: B.g600, fontFamily: F, borderBottom: `2px solid ${B.g200}`, width: 60 }}>Status</th>
                                     </tr>
                                 </thead>
