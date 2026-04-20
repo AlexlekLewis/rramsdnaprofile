@@ -849,6 +849,17 @@ export default function CoachAssessment() {
                     </div>
                     <div style={{ fontSize: 9, color: B.pk, fontFamily: F, marginTop: 4, fontWeight: 600 }}>Tap ⓘ next to each item for detailed scoring criteria.</div>
                 </div>
+                {activeSession === 'weekday' && sp.role !== 'pace' && sp.role !== 'spin' && sp.role !== 'bowlrounder' && (
+                    <div style={{ background: `${B.bl}08`, border: `1px solid ${B.bl}25`, borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                        <div style={{ fontSize: 9, fontWeight: 800, color: B.bl, fontFamily: F, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 4 }}>🏏 Drill Lens · Weekday Session</div>
+                        <div style={{ fontSize: 10, color: B.g600, fontFamily: F, lineHeight: 1.45 }}>
+                            <strong style={{ color: B.g800 }}>Hour 1 · Technical Testing (3 Ball Drill):</strong> Spin feet/sweeps → <em>Playing Spin, Sweep &amp; Reverse Sweep</em>. Pace Full/Short → <em>Stance, Trigger, Front-Foot Drive, Back-Foot Play, Playing Pace</em>.<br/>
+                            <strong style={{ color: B.g800 }}>Hour 1 · Problem Solving:</strong> 360 Drill, Opposite Hand Hitting, Must Go For 6 → <em>Power Hitting, Death-Over Hitting</em> + observable courage / curiosity / coachability.<br/>
+                            <strong style={{ color: B.g800 }}>Hour 2 · Access &amp; Creativity (6 Balls 6 Zones):</strong> Zone range &amp; creativity — sharpens <em>Sweep &amp; Reverse Sweep, Power Hitting, Playing Spin</em>.<br/>
+                            <strong style={{ color: B.g800 }}>Hour 2 · Hand Speed &amp; Length (Ping balls):</strong> Tracking genuine pace — feeds <em>Playing Pace, Back-Foot Play</em>.
+                        </div>
+                    </div>
+                )}
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{t.pri.filter((_, i) => cd[`t1_${i}`] > 0).length}/{t.pri.length} rated</div>
                 <AssGrid items={t.pri} values={cd} onRate={cU} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="t1" activeSession={activeSession} />
                 <SecH title={t.sL} />
@@ -1080,8 +1091,8 @@ export default function CoachAssessment() {
                 const title = isWeekday ? 'Weekday · Skill Session' : 'Weekend · Game Sense Session';
                 const emoji = isWeekday ? '🏏' : '🎯';
                 const sub = isWeekday
-                    ? 'Score the technical / power / observable items you can see in the drill block. Weekend-only items are locked.'
-                    : 'Score the game-sense, fielding, pressure-mental and match-context items. Weekday-only items are locked.';
+                    ? 'Hour 1 — Technical Testing + Problem Solving · Hour 2 — Access & Creativity + Hand Speed / Length. Weekend-only items are locked.'
+                    : 'Game sense, fielding, pressure mental and match-context items unlock in this session. Weekday-only items are locked.';
                 return (
                     <div style={{ padding: isDesktop() ? '10px 16px' : '8px 12px', background: `${bannerColor}08`, borderBottom: `1px solid ${bannerColor}25`, display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ fontSize: 18, flexShrink: 0 }}>{emoji}</div>
