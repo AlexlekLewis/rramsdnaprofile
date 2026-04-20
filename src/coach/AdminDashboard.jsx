@@ -6,7 +6,8 @@ import { B, F, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES } from "../data/skillItems";
 import { getAge, getBracket } from "../engine/ratingEngine";
 import { loadPlayersFromDB, loadPlayerScores } from "../db/playerDb";
-import { loadSquadGroups, loadSquadAllocations, loadProgramMembers, loadMemberEngagement } from "../db/adminDb";
+import { loadProgramMembers, loadMemberEngagement } from "../db/adminDb";
+import { loadAssessmentRosters, buildRosterLookup, matchPlayerToSquad } from "../db/sessionDb";
 import { loadJournalHistory } from "../db/journalDb";
 import { Hdr, SecH, InfoTooltip } from "../shared/FormComponents";
 
@@ -57,8 +58,7 @@ export default function AdminDashboard({ onBack }) {
     const [tab, setTab] = useState('overview');
     const [players, setPlayers] = useState([]);
     const [scores, setScores] = useState([]);
-    const [squads, setSquads] = useState([]);
-    const [allocations, setAllocations] = useState([]);
+    const [rosters, setRosters] = useState({ skillWeek: [], gameSenseWeek: [] });
     const [engagement, setEngagement] = useState([]);
     const [journalCounts, setJournalCounts] = useState({});
     const [loading, setLoading] = useState(true);
@@ -75,17 +75,15 @@ export default function AdminDashboard({ onBack }) {
     const refreshData = useCallback(async () => {
         setLoading(true);
         try {
-            const [ps, sc, sq, alloc, eng] = await Promise.all([
+            const [ps, sc, rs, eng] = await Promise.all([
                 loadPlayersFromDB(),
                 loadPlayerScores(),
-                loadSquadGroups(),
-                loadSquadAllocations(),
+                loadAssessmentRosters(),
                 loadMemberEngagement(),
             ]);
             setPlayers(ps);
             setScores(sc || []);
-            setSquads(sq || []);
-            setAllocations(alloc || []);
+            setRosters(rs || { skillWeek: [], gameSenseWeek: [] });
             setEngagement(eng || []);
         } catch (e) {
             console.error('Admin data load error:', e);
@@ -102,6 +100,15 @@ export default function AdminDashboard({ onBack }) {
         return map;
     }, [scores]);
 
+    // Build lookups from weekday + weekend rosters so each player can show both squads
+    const wdLookup = useMemo(() => buildRosterLookup(rosters.skillWeek), [rosters.skillWeek]);
+    const weLookup = useMemo(() => buildRosterLookup(rosters.gameSenseWeek), [rosters.gameSenseWeek]);
+    const squadById = useMemo(() => {
+        const m = {};
+        [...rosters.skillWeek, ...rosters.gameSenseWeek].forEach(sq => { m[sq.id] = sq; });
+        return m;
+    }, [rosters]);
+
     const enrichedPlayers = useMemo(() => {
         return players.filter(p => p.submitted).map(p => {
             const hasCd = Object.keys(p.cd || {}).some(k => k.startsWith('t1_'));
@@ -117,10 +124,11 @@ export default function AdminDashboard({ onBack }) {
             const age = getAge(p.dob);
             const bracket = getBracket(p.dob);
             const roleObj = ROLES.find(r => r.id === p.role);
-            const squadAlloc = allocations.find(a => a.player_id === p.id);
-            return { ...p, dn, age, bracket, roleLabel: roleObj?.label || p.role, ccm: sc?.ccm || 0, assessed: hasCd, squadId: squadAlloc?.squad_id || null };
+            const wdId = matchPlayerToSquad(wdLookup, rosters.skillWeek, p.name);
+            const weId = matchPlayerToSquad(weLookup, rosters.gameSenseWeek, p.name);
+            return { ...p, dn, age, bracket, roleLabel: roleObj?.label || p.role, ccm: sc?.ccm || 0, assessed: hasCd, wdSquad: squadById[wdId] || null, weSquad: squadById[weId] || null };
         });
-    }, [players, scoresByPlayer, allocations]);
+    }, [players, scoresByPlayer, rosters, wdLookup, weLookup, squadById]);
 
     // Filtered + sorted rankings
     const rankedPlayers = useMemo(() => {
@@ -163,7 +171,8 @@ export default function AdminDashboard({ onBack }) {
                 Name: p.name, Role: p.roleLabel, Age: p.age, 'Age Group': p.bracket,
                 PDI: p.dn?.overall?.toFixed(2) || '', CCM: p.ccm?.toFixed(2) || '',
                 Assessed: p.assessed ? 'Yes' : 'No', Club: p.club || '',
-                Squad: squads.find(s => s.id === p.squadId)?.name || '',
+                'Weekday Squad': p.wdSquad?.name || '',
+                'Weekend Squad': p.weSquad?.name || '',
             }));
             const ws = XLSX.utils.json_to_sheet(data);
             const wb = XLSX.utils.book_new();
