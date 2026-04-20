@@ -649,3 +649,75 @@ export const SPIN_VARIATIONS = [
     "Wrong'un / Googly", "Arm Ball", "Top Spinner",
     "Slider", "Flipper", "Carrom Ball", "Undercutter",
 ];
+
+// ═══ ASSESSMENT SESSION TAGGING ═══
+// Maps each rateable skill label to the assessment session in which a coach
+// can realistically observe it:
+//   'weekday' — Skill Week (midweek drill session, WD1-4)
+//   'weekend' — Game Sense Week (weekend live match, WE1-4)
+//   'both'    — observable in both sessions (default for un-mapped labels)
+//
+// Source of truth: the "Assessment Week One" session plan sheet (what the
+// 2-hour weekday drill block actually exposes) and the RRA Assessment Week
+// Form PDF (which items are captured overall). Labels not listed here are
+// treated as 'both' so they remain editable in either session.
+//
+// Weekday coverage is currently scoped to batter-relevant observables.
+// Bowling-technical labels are intentionally 'both' until weekend planning
+// is done and the bowling split is confirmed.
+export const SKILL_SESSIONS = {
+    // ─── BATTING TECHNICAL ───
+    "Stance & Setup": "weekday",
+    "Trigger Movement & Balance": "weekday",
+    "Front-Foot Drive": "weekday",
+    "Back-Foot Play": "weekday",
+    "Power Hitting": "weekday",
+    "Sweep & Reverse Sweep": "weekday",
+    "Playing Spin": "weekday",
+    "Playing Pace": "weekday",
+    "Strike Rotation": "weekend",
+    "Death-Over Hitting": "weekday",
+    // ─── POWER HITTING PILLAR EXTRAS (360 Drill + Must Go For 6) ───
+    "Lofted Hitting Confidence": "weekday",
+    "Scoring Arc / Range": "weekday",
+    // ─── GAME INTELLIGENCE (all weekend — needs live match context) ───
+    "Powerplay Awareness": "weekend",
+    "Middle-Over Management": "weekend",
+    "Death-Over Decisions": "weekend",
+    "Match Reading": "weekend",
+    "Field Awareness": "weekend",
+    "Adaptability": "weekend",
+    // ─── MENTAL (mixed — drills expose some, pressure moments expose others) ───
+    "Courage Under Pressure": "weekday",
+    "Curiosity & Learning": "weekday",
+    "Coachability": "weekday",
+    "Emotional Regulation": "weekend",
+    "Competitive Drive": "weekend",
+    "Communication & Leadership": "weekend",
+    "Resilience": "weekend",
+    // ─── PHYSICAL (batter-mapped labels) ───
+    "Explosive Power": "weekday",
+    "Core Balance": "weekday",
+    "Upper Body Power": "weekday",
+    "Agility & Running": "weekend",
+    "Aerobic Fitness": "weekend",
+    "Hand-Eye Coordination": "weekday",
+    // ─── ATHLETIC FIELDING (all weekend — no fielding in weekday plan) ───
+    "Ground Fielding": "weekend",
+    "Catching Reliability": "weekend",
+    "Close / Sharp Catching": "weekend",
+    "Throwing Accuracy & Speed": "weekend",
+    "Running Between Wickets": "weekend",
+};
+
+export function getItemSession(label) {
+    return SKILL_SESSIONS[label] || "both";
+}
+
+// Returns true if an item is editable under the given activeSession.
+// activeSession: 'weekday' | 'weekend' | null (no gating).
+export function isItemActiveForSession(label, activeSession) {
+    if (!activeSession) return true;
+    const s = SKILL_SESSIONS[label] || "both";
+    return s === "both" || s === activeSession;
+}

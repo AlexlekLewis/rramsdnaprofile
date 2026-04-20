@@ -374,7 +374,11 @@ export async function loadDraftFromDB(authUserId) {
 // ── History snapshot throttle: 5 minutes between snapshots per player ──
 const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
 
-export async function saveAssessmentToDB(playerId, cd) {
+export async function saveAssessmentToDB(playerId, cd, opts = {}) {
+    // opts.session — optional 'weekday' | 'weekend' — stamps the matching
+    // {weekday|weekend}_coach_* columns so admin can see who filled which
+    // session. Defaults to no session stamp (backwards-compatible).
+    const activeSession = opts.session === 'weekday' || opts.session === 'weekend' ? opts.session : null;
     // Fetch session at function scope so it's accessible for both history and upsert
     let session = null;
     try {
@@ -433,6 +437,7 @@ export async function saveAssessmentToDB(playerId, cd) {
     const ratedCount = allRatingKeys.filter(k => cd[k] > 0).length;
     const status = (ratedCount > 0 && cd.narrative && strengths.length > 0) ? 'complete' : 'draft';
 
+    const nowIso = new Date().toISOString();
     const row = {
         player_id: playerId, coach_id: session?.user?.id || null,
         batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
@@ -445,11 +450,24 @@ export async function saveAssessmentToDB(playerId, cd) {
         overall_batting: cd._overallBatting ?? null,
         overall_rating: cd._overallRating ?? null,
         batting_qualities: cd._battingQualities ?? null,
-        session_date: new Date().toISOString().split('T')[0],
+        session_date: nowIso.split('T')[0],
         status,
         player_voice: cd._playerVoice || null,
-        updated_at: new Date().toISOString()
+        updated_at: nowIso,
     };
+    // Stamp the active session's coach + timestamp columns so weekday and
+    // weekend can be tracked independently even when a different coach fills each.
+    if (activeSession === 'weekday') {
+        row.weekday_coach_id = session?.user?.id || null;
+        row.weekday_coach_email = session?.user?.email || null;
+        row.weekday_submitted_at = nowIso;
+        row.last_session = 'weekday';
+    } else if (activeSession === 'weekend') {
+        row.weekend_coach_id = session?.user?.id || null;
+        row.weekend_coach_email = session?.user?.email || null;
+        row.weekend_submitted_at = nowIso;
+        row.last_session = 'weekend';
+    }
     const { data: upsertData, error: upsertErr } = await supabase
         .from('coach_assessments')
         .upsert(row, { onConflict: 'player_id' })
