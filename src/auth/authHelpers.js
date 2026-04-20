@@ -6,7 +6,10 @@ import { supabase } from '../supabaseClient';
  * then authenticates via Supabase Auth.
  */
 export async function signInWithUsername(username, password) {
-    const cleanUsername = username.toLowerCase().trim();
+    // Strip any @rradna.app (or other) suffix iPhone/Chrome keychain may auto-fill.
+    // The app stores usernames as `firstname.lastname` — coaches often paste the
+    // full email from autofill without realising.
+    const cleanUsername = username.toLowerCase().trim().split('@')[0];
 
     let member = null;
 
