@@ -745,10 +745,15 @@ export default function CoachAssessment() {
             return currentCd;
         };
 
+        // ── Session gating: derive from the roster toggle ──
+        // 'skill' = weekday (Skill Week / WD1-4), 'gameSense' = weekend (Game Sense / WE1-4)
+        const activeSession = rosterWeek === 'gameSense' ? 'weekend' : 'weekday';
+
         const cU = (k, v) => {
             // Capture player identity + data at call time to prevent stale closure
             const playerId = sp.id;
             const playerSnap = { grades: sp.grades, dob: sp.dob, self_ratings: sp.self_ratings, role: sp.role, topBat: sp.topBat, topBowl: sp.topBowl };
+            const savingSession = activeSession;
 
             setPlayers(ps => ps.map(p => p.id === playerId ? { ...p, cd: { ...p.cd, [k]: v } } : p));
             pendingCdRef.current = { ...pendingCdRef.current, [k]: v };
@@ -761,7 +766,7 @@ export default function CoachAssessment() {
                 let lastRetryLog = 0;
                 const doSave = async () => {
                     try {
-                        await saveAssessmentToDB(playerId, enrichedCd);
+                        await saveAssessmentToDB(playerId, enrichedCd, { session: savingSession });
                         saveStatusHook.setSaved();
                         retryCount.current = 0;
                         try { localStorage.removeItem(`rra_draft_${playerId}`); } catch { }
@@ -821,12 +826,12 @@ export default function CoachAssessment() {
                     <div style={{ fontSize: 10, fontWeight: 600, color: B.pk, fontFamily: F }}>Batting</div>
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{PHASES.filter(p => cd[`pb_${p.id}`] > 0).length}/{PHASES.length} rated</div>
                 </div>
-                <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pb_${i}`, cd[`pb_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pb_${PHASES[idx].id}`, v); }} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="pb" />
+                <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pb_${i}`, cd[`pb_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pb_${PHASES[idx].id}`, v); }} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="pb" activeSession={activeSession} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 6 }}>
                     <div style={{ fontSize: 10, fontWeight: 600, color: B.bl, fontFamily: F }}>Bowling</div>
                     <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{PHASES.filter(p => cd[`pw_${p.id}`] > 0).length}/{PHASES.length} rated</div>
                 </div>
-                <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pw_${i}`, cd[`pw_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pw_${PHASES[idx].id}`, v); }} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="pw" />
+                <AssGrid items={PHASES.map(p => p.nm)} values={Object.fromEntries(PHASES.map((p, i) => [`pw_${i}`, cd[`pw_${p.id}`]]))} onRate={(k, v) => { const idx = parseInt(k.split('_').pop()); cU(`pw_${PHASES[idx].id}`, v); }} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="pw" activeSession={activeSession} />
             </div>);
 
             if (cPage === 1) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
@@ -845,26 +850,26 @@ export default function CoachAssessment() {
                     <div style={{ fontSize: 9, color: B.pk, fontFamily: F, marginTop: 4, fontWeight: 600 }}>Tap ⓘ next to each item for detailed scoring criteria.</div>
                 </div>
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{t.pri.filter((_, i) => cd[`t1_${i}`] > 0).length}/{t.pri.length} rated</div>
-                <AssGrid items={t.pri} values={cd} onRate={cU} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="t1" />
+                <AssGrid items={t.pri} values={cd} onRate={cU} color={B.pk} SKILL_DEFS={COACH_DEFS} keyPrefix="t1" activeSession={activeSession} />
                 <SecH title={t.sL} />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{t.sec.filter((_, i) => cd[`t2_${i}`] > 0).length}/{t.sec.length} rated</div>
-                <AssGrid items={t.sec} values={cd} onRate={cU} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="t2" />
+                <AssGrid items={t.sec} values={cd} onRate={cU} color={B.bl} SKILL_DEFS={COACH_DEFS} keyPrefix="t2" activeSession={activeSession} />
             </div>);
 
             if (cPage === 2) return (<div style={{ padding: "0 12px 16px", ...getDkWrap() }}>
                 <ConfidenceContext matchups={MENTAL_MATCHUPS} domain="mnt" title="MENTAL & CHARACTER" color={B.prp} sr={sr} />
                 <SecH title="Game Intelligence" />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{IQ_ITEMS.filter((_, i) => cd[`iq_${i}`] > 0).length}/{IQ_ITEMS.length} rated</div>
-                <AssGrid items={IQ_ITEMS} values={cd} onRate={cU} color={B.sky} SKILL_DEFS={COACH_DEFS} keyPrefix="iq" />
+                <AssGrid items={IQ_ITEMS} values={cd} onRate={cU} color={B.sky} SKILL_DEFS={COACH_DEFS} keyPrefix="iq" activeSession={activeSession} />
                 <SecH title="Mental & Character" sub="Royals Way aligned" />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{MN_ITEMS.filter((_, i) => cd[`mn_${i}`] > 0).length}/{MN_ITEMS.length} rated</div>
-                <AssGrid items={MN_ITEMS} values={cd} onRate={cU} color={B.prp} SKILL_DEFS={COACH_DEFS} keyPrefix="mn" />
+                <AssGrid items={MN_ITEMS} values={cd} onRate={cU} color={B.prp} SKILL_DEFS={COACH_DEFS} keyPrefix="mn" activeSession={activeSession} />
                 <SecH title="Physical & Athletic" />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{(PH_MAP[sp.role] || PH_MAP.batter).filter((_, i) => cd[`ph_${i}`] > 0).length}/{(PH_MAP[sp.role] || PH_MAP.batter).length} rated</div>
-                <AssGrid items={PH_MAP[sp.role] || PH_MAP.batter} values={cd} onRate={cU} color={B.nv} SKILL_DEFS={COACH_DEFS} keyPrefix="ph" />
+                <AssGrid items={PH_MAP[sp.role] || PH_MAP.batter} values={cd} onRate={cU} color={B.nv} SKILL_DEFS={COACH_DEFS} keyPrefix="ph" activeSession={activeSession} />
                 <SecH title="Athletic Fielding" sub="Universal across all roles" />
                 <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginBottom: 4, textAlign: 'right' }}>{FLD_ITEMS.filter((_, i) => cd[`fld_${i}`] > 0).length}/{FLD_ITEMS.length} rated</div>
-                <AssGrid items={FLD_ITEMS} values={cd} onRate={cU} color={B.grn} SKILL_DEFS={COACH_DEFS} keyPrefix="fld" />
+                <AssGrid items={FLD_ITEMS} values={cd} onRate={cU} color={B.grn} SKILL_DEFS={COACH_DEFS} keyPrefix="fld" activeSession={activeSession} />
             </div>);
 
             if (cPage === 3) {
@@ -1067,6 +1072,31 @@ export default function CoachAssessment() {
                 {pgN.map((n, i) => (<button key={i} onClick={() => { setCPage(i); goTop(); }}
                     style={{ padding: isDesktop() ? '8px 18px' : '5px 10px', borderRadius: 20, border: "none", background: i === cPage ? B.pk : "transparent", color: i === cPage ? B.w : B.g400, fontSize: isDesktop() ? 12 : 10, fontWeight: 700, fontFamily: F, cursor: "pointer", whiteSpace: "nowrap" }}>{n}</button>))}
             </div>
+
+            {/* ── Session mode banner — makes it explicit which session a coach is scoring ── */}
+            {(() => {
+                const isWeekday = activeSession === 'weekday';
+                const bannerColor = isWeekday ? B.bl : B.pk;
+                const title = isWeekday ? 'Weekday · Skill Session' : 'Weekend · Game Sense Session';
+                const emoji = isWeekday ? '🏏' : '🎯';
+                const sub = isWeekday
+                    ? 'Score the technical / power / observable items you can see in the drill block. Weekend-only items are locked.'
+                    : 'Score the game-sense, fielding, pressure-mental and match-context items. Weekday-only items are locked.';
+                return (
+                    <div style={{ padding: isDesktop() ? '10px 16px' : '8px 12px', background: `${bannerColor}08`, borderBottom: `1px solid ${bannerColor}25`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontSize: 18, flexShrink: 0 }}>{emoji}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, color: bannerColor, fontFamily: F, letterSpacing: 0.4, textTransform: 'uppercase' }}>{title}</div>
+                            <div style={{ fontSize: 10, color: B.g600, fontFamily: F, lineHeight: 1.35 }}>{sub}</div>
+                        </div>
+                        <button onClick={() => setRosterWeek(isWeekday ? 'gameSense' : 'skill')}
+                            title="Switch session view"
+                            style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, color: bannerColor, background: `${bannerColor}15`, border: `1px solid ${bannerColor}40`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: F, whiteSpace: 'nowrap' }}>
+                            Switch
+                        </button>
+                    </div>
+                );
+            })()}
 
             <div style={{ paddingBottom: 60 }}>{renderAP()}</div>
 

@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { B, F, LOGO, sGrad, sCard, isDesktop, getDSZ, getDSF } from '../data/theme';
 import { TIER_GROUPS, isCommunityGroup } from '../data/competitionData';
 import { getAge } from '../engine/ratingEngine';
+import { getItemSession } from '../data/skillItems';
 
 // ═══ HEADER ═══
 export function Hdr({ label, onLogoClick }) {
@@ -100,7 +101,7 @@ export function Dots({ value, onChange, color = B.pk }) {
 const RATING_LABELS = ['', 'Just Starting', 'Developing', 'Solid', 'Strong', 'Elite'];
 const COACH_LABELS = ['', 'Novice', 'Developing', 'Competent', 'Advanced', 'Elite'];
 
-export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix }) {
+export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix, activeSession }) {
     const [openIdx, setOpenIdx] = useState(null);
     const mobile = !isDesktop();
     return (
@@ -111,15 +112,20 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                 const isOpen = openIdx === i;
                 const defs = SKILL_DEFS?.[item];
                 const done = v > 0;
+                const itemSession = getItemSession(item);
+                const locked = !!activeSession && itemSession !== 'both' && itemSession !== activeSession;
+                const lockLabel = itemSession === 'weekend' ? 'Weekend' : itemSession === 'weekday' ? 'Weekday' : null;
+                const lockColor = itemSession === 'weekend' ? B.pk : B.bl;
                 return (
                     <div key={item} style={{
-                        background: isOpen ? B.w : B.g100,
+                        background: locked ? B.g50 : (isOpen ? B.w : B.g100),
                         borderRadius: 10,
-                        border: isOpen ? `2px solid ${color}40` : `1.5px solid ${done ? `${B.grn}50` : B.g200}`,
+                        border: isOpen ? `2px solid ${color}40` : `1.5px solid ${locked ? `${lockColor}25` : (done ? `${B.grn}50` : B.g200)}`,
                         overflow: 'hidden',
                         transition: 'all 0.25s ease',
                         gridColumn: isOpen && isDesktop() ? '1 / -1' : undefined,
                         boxShadow: isOpen ? `0 4px 16px ${color}15` : 'none',
+                        opacity: locked ? 0.62 : 1,
                     }}>
                         {/* ── Tile header with inline rating ── */}
                         <div style={{ padding: '8px 10px' }}>
@@ -142,6 +148,15 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                                 }}>
                                     {item}
                                 </div>
+                                {locked && lockLabel && (
+                                    <span title={`This item is scored in the ${lockLabel.toLowerCase()} session`}
+                                        style={{
+                                            flexShrink: 0, fontSize: 8, fontWeight: 800, color: lockColor,
+                                            background: `${lockColor}15`, border: `1px solid ${lockColor}40`,
+                                            borderRadius: 4, padding: '2px 6px', fontFamily: F,
+                                            textTransform: 'uppercase', letterSpacing: 0.4,
+                                        }}>🔒 {lockLabel}</span>
+                                )}
                                 {defs && <span onClick={() => setOpenIdx(isOpen ? null : i)} style={{
                                     fontSize: 10, color: B.g400, cursor: 'pointer', flexShrink: 0,
                                     transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
@@ -154,13 +169,15 @@ export function AssGrid({ items, values, onRate, color, SKILL_DEFS, keyPrefix })
                                     const sel = v === n;
                                     const labels = defs ? COACH_LABELS : RATING_LABELS;
                                     return (
-                                        <button key={n} onClick={() => onRate(k, v === n ? 0 : n)}
+                                        <button key={n} onClick={() => { if (!locked) onRate(k, v === n ? 0 : n); }}
+                                            disabled={locked}
+                                            title={locked && lockLabel ? `Assessed in the ${lockLabel.toLowerCase()} session` : undefined}
                                             style={{
                                                 flex: 1, minHeight: mobile ? 38 : 32, maxWidth: mobile ? 64 : 56,
                                                 border: sel ? `2px solid ${color}` : `1.5px solid ${B.g200}`,
                                                 borderRadius: 8,
                                                 background: sel ? `${color}15` : B.w,
-                                                cursor: 'pointer',
+                                                cursor: locked ? 'not-allowed' : 'pointer',
                                                 display: 'flex', flexDirection: 'column',
                                                 alignItems: 'center', justifyContent: 'center', gap: 1,
                                                 padding: '4px 2px',
