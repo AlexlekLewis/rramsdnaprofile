@@ -284,6 +284,107 @@ export function Ring({ value, size = 100, color = B.pk, label }) {
     );
 }
 
+// ═══ SCORE DEFINITIONS (shared across coach + admin portals) ═══
+export const SCORE_DEFS = {
+    overall: {
+        name: 'Overall Player Score',
+        short: '⭐ Overall',
+        range: '0 – 100',
+        desc: 'Combined weighted score from all assessments. Blends PDI, CCM, and completion quality into a single headline number so you can rank players at a glance.',
+    },
+    pdi: {
+        name: 'Player Development Index',
+        short: 'PDI',
+        range: '1.0 – 5.0',
+        desc: 'Weighted average of all 8 skill pillars on a 1–5 scale. Each pillar\'s weight changes by role — e.g. Technical Mastery counts more for spinners than pace bowlers.',
+    },
+    ccm: {
+        name: 'Competition Context Multiplier',
+        short: 'CCM',
+        range: '0.5 – 2.0+',
+        desc: 'Adjusts PDI by what level the player competes at and how old they are relative to that level. A young player thriving at a high level gets an uplift.',
+    },
+    cti: {
+        name: 'Competition Tier Index',
+        short: 'CTI',
+        range: '0.5 – 2.0',
+        desc: 'The "what level" part of CCM. Premier Cricket scores higher than Community cricket. Higher tier = higher CTI.',
+    },
+    arm: {
+        name: 'Age Relativity Multiplier',
+        short: 'ARM',
+        range: '0.8 – 1.5',
+        desc: 'The "age vs age-group" part of CCM. Younger players in higher groups get a boost. Older players in lower groups get a slight downward adjustment.',
+    },
+    trajectory: {
+        name: 'Positive Trajectory',
+        short: '🚀 Trajectory',
+        range: '',
+        desc: 'Flags a player who is young for their competition level AND rating well (PDI 2.5+). Signals a strong development curve — worth tracking closely.',
+    },
+};
+
+// ═══ INFO TOOLTIP (hover on desktop, tap on mobile) ═══
+export function InfoTooltip({ def, children, placement = 'top', inline = true }) {
+    const [open, setOpen] = useState(false);
+    const d = typeof def === 'string' ? SCORE_DEFS[def] : def;
+    if (!d) return children;
+
+    const show = () => setOpen(true);
+    const hide = () => setOpen(false);
+    const toggle = (e) => { e.stopPropagation(); setOpen(o => !o); };
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = () => setOpen(false);
+        const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+        document.addEventListener('click', onDoc);
+        document.addEventListener('keydown', onKey);
+        return () => { document.removeEventListener('click', onDoc); document.removeEventListener('keydown', onKey); };
+    }, [open]);
+
+    const pop = {
+        position: 'absolute',
+        zIndex: 9999,
+        [placement === 'top' ? 'bottom' : 'top']: 'calc(100% + 8px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 240,
+        maxWidth: 'calc(100vw - 32px)',
+        background: B.nvD,
+        color: B.w,
+        borderRadius: 8,
+        padding: '10px 12px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+        fontFamily: F,
+        textAlign: 'left',
+        pointerEvents: 'none',
+        border: `1px solid ${B.g200}`,
+    };
+
+    return (
+        <span
+            style={{ position: 'relative', display: inline ? 'inline-flex' : 'flex', cursor: 'help' }}
+            onMouseEnter={show}
+            onMouseLeave={hide}
+            onFocus={show}
+            onBlur={hide}
+            onClick={toggle}
+            tabIndex={0}
+            aria-label={`${d.name} — info`}
+        >
+            {children}
+            {open && (
+                <span style={pop} role="tooltip">
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: B.w, marginBottom: 2 }}>{d.name}</span>
+                    {d.range && <span style={{ display: 'block', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: 6, letterSpacing: 0.3 }}>Range: {d.range}</span>}
+                    <span style={{ display: 'block', fontSize: 10, lineHeight: 1.45, color: 'rgba(255,255,255,0.88)' }}>{d.desc}</span>
+                </span>
+            )}
+        </span>
+    );
+}
+
 // ═══ COMPETITION LEVEL SELECTOR ═══
 export function CompLevelSel({ value, onChange, compTiers, gender, assocComps, vmcuAssocs, playerAssoc, playerDob }) {
     const [selGroup, setSelGroup] = useState(() => {
