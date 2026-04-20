@@ -482,6 +482,78 @@ export async function saveAssessmentToDB(playerId, cd, opts = {}) {
     }
 }
 
+// ═══ BEACON FLUSH — survives tab background / close on mobile ═══
+// Call synchronously from visibilitychange (hidden) / pagehide / beforeunload.
+// Uses fetch with keepalive:true so the request completes even if the tab is
+// suspended or killed. Includes proper RLS auth headers (the old sendBeacon
+// lacked these and silently failed).
+//
+// Token + anonKey are passed in because auth.getSession() is async and the
+// mobile lifecycle event handlers can't safely await.
+export function flushAssessmentBeacon(playerId, cd, accessToken, anonKey, opts = {}) {
+    if (!playerId || !cd || !accessToken || !anonKey) return false;
+    const activeSession = opts.session === 'weekday' || opts.session === 'weekend' ? opts.session : null;
+    const userId = opts.userId || null;
+    const userEmail = opts.userEmail || null;
+
+    // Build the same row shape as saveAssessmentToDB.
+    const phaseKeys = ['pb_pp', 'pw_pp', 'pb_mid', 'pw_mid', 'pb_death', 'pw_death'];
+    const phase_ratings = Object.fromEntries(phaseKeys.filter(k => cd[k] != null).map(k => [k, cd[k]]));
+    const tech_primary = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('t1_')));
+    const tech_secondary = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('t2_')));
+    const game_iq = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('iq_')));
+    const mental = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('mn_')));
+    const physical = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('ph_')));
+    const fielding = Object.fromEntries(Object.entries(cd).filter(([k]) => k.startsWith('fld_')));
+    const strengths = [cd.str1, cd.str2, cd.str3].filter(Boolean);
+    const priorities = [cd.pri1, cd.pri2, cd.pri3].filter(Boolean);
+    const allKeys = [...Object.keys(tech_primary), ...Object.keys(tech_secondary), ...Object.keys(game_iq), ...Object.keys(mental), ...Object.keys(physical), ...Object.keys(fielding)];
+    const ratedCount = allKeys.filter(k => cd[k] > 0).length;
+    const status = (ratedCount > 0 && cd.narrative && strengths.length > 0) ? 'complete' : 'draft';
+    const nowIso = new Date().toISOString();
+    const row = {
+        player_id: playerId, coach_id: userId,
+        batting_archetype: cd.batA || null, bowling_archetype: cd.bwlA || null,
+        phase_ratings, tech_primary, tech_secondary, game_iq, mental, physical,
+        fielding: Object.keys(fielding).length > 0 ? fielding : null,
+        narrative: cd.narrative || null, strengths, priorities,
+        plan_explore: cd.pl_explore || null, plan_challenge: cd.pl_challenge || null, plan_execute: cd.pl_execute || null,
+        squad_rec: cd.sqRec || null,
+        overall_batting: cd._overallBatting ?? null,
+        overall_rating: cd._overallRating ?? null,
+        batting_qualities: cd._battingQualities ?? null,
+        session_date: nowIso.split('T')[0],
+        status,
+        player_voice: cd._playerVoice || null,
+        updated_at: nowIso,
+    };
+    if (activeSession === 'weekday') {
+        row.weekday_coach_id = userId; row.weekday_coach_email = userEmail;
+        row.weekday_submitted_at = nowIso; row.last_session = 'weekday';
+    } else if (activeSession === 'weekend') {
+        row.weekend_coach_id = userId; row.weekend_coach_email = userEmail;
+        row.weekend_submitted_at = nowIso; row.last_session = 'weekend';
+    }
+
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/coach_assessments?on_conflict=player_id`;
+    try {
+        fetch(url, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey': anonKey,
+                'Prefer': 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([row]),
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ═══ PLAYER-FACING ASSESSMENT LOADER (DNA VIEW) ═══
 // Returns only player-safe fields — NO raw scores, PDI, SAGI, CCM, or domain percentages
 

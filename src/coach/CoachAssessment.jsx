@@ -10,7 +10,8 @@ import { useEngine } from "../context/EngineContext";
 import { B, F, LOGO, sGrad, sCard, getDkWrap, isDesktop } from "../data/theme";
 import { ROLES, IQ_ITEMS, MN_ITEMS, PH_MAP, PHASES, VOICE_QS, BAT_ARCH, BWL_ARCH, BAT_MATCHUPS, BWL_MATCHUPS, MENTAL_MATCHUPS, CONFIDENCE_SCALE, FREQUENCY_SCALE, FLD_ITEMS } from "../data/skillItems";
 import { getAge, getBracket, calcCCM, calcPDI, calcCohortPercentile, calcAgeScore, techItems } from "../engine/ratingEngine";
-import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile } from "../db/playerDb";
+import { loadPlayersFromDB, saveAssessmentToDB, reopenPlayerProfile, flushAssessmentBeacon } from "../db/playerDb";
+import { supabase } from "../supabaseClient";
 import { loadAssessmentRosters, buildRosterLookup, matchPlayerToSquad } from "../db/sessionDb";
 import { loadProgramMembers, resetUserPassword } from "../db/adminDb";
 import { generateDNAReport } from "../supabaseClient";
@@ -225,34 +226,73 @@ export default function CoachAssessment() {
     const pendingCdRef = useRef({});
     const retryCount = useRef(0);
     const currentPlayerIdRef = useRef(null);
+    // Cached synchronously so mobile lifecycle handlers (visibilitychange / pagehide)
+    // can fire a keepalive beacon without awaiting supabase.auth.getSession().
+    const authCacheRef = useRef({ token: null, userId: null, userEmail: null });
+    const rosterWeekRef = useRef('skill');
 
     const goTop = () => window.scrollTo(0, 0);
 
-    // ── Flush pending saves on tab close / navigate away ──
-    // Combines master's "warn during active save" with main's "emergency flush via sendBeacon"
+    // Keep rosterWeek synchronously accessible from lifecycle handlers
+    useEffect(() => { rosterWeekRef.current = rosterWeek; }, [rosterWeek]);
+
+    // Cache the current session token + user info so mobile lifecycle handlers
+    // (visibilitychange / pagehide) can fire a keepalive beacon synchronously —
+    // supabase.auth.getSession() is async and iOS may suspend the tab before it resolves.
     useEffect(() => {
-        const handleBeforeUnload = (e) => {
+        let cancelled = false;
+        const apply = (s) => {
+            if (cancelled) return;
+            authCacheRef.current = {
+                token: s?.access_token || null,
+                userId: s?.user?.id || null,
+                userEmail: s?.user?.email || null,
+            };
+        };
+        supabase.auth.getSession().then(({ data }) => apply(data?.session));
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => apply(s));
+        return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
+    }, []);
+
+    // ── Flush pending saves on tab background / close (mobile-reliable) ──
+    // iOS Safari often doesn't fire beforeunload when locking the phone or
+    // switching apps — but it DOES fire visibilitychange (hidden) and pagehide.
+    // We listen to all three and flush via a keepalive fetch that survives the
+    // tab being suspended. localStorage draft remains the last-resort fallback.
+    useEffect(() => {
+        const flush = () => {
+            const pid = currentPlayerIdRef.current;
+            const pending = pendingCdRef.current;
+            if (!pid || !pending || Object.keys(pending).length === 0) return;
+            // Safety-net draft (used by beforeunload reload and page recovery)
+            try { localStorage.setItem(`rra_draft_${pid}`, JSON.stringify(pending)); } catch {}
+            // Fire a keepalive beacon with proper auth headers
+            const session = rosterWeekRef.current === 'gameSense' ? 'weekend' : 'weekday';
+            const { token, userId, userEmail } = authCacheRef.current;
+            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            flushAssessmentBeacon(pid, pending, token, anonKey, { session, userId, userEmail });
+        };
+        const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+        const onPageHide = () => flush();
+        const onBeforeUnload = (e) => {
             const pid = currentPlayerIdRef.current;
             const pending = pendingCdRef.current;
             const hasPending = pid && pending && Object.keys(pending).length > 0;
             const activeSave = saveStatusHook.status === 'saving' || saveStatusHook.status === 'error';
             if (hasPending || activeSave) {
-                // Save draft to localStorage as safety net
-                if (hasPending) {
-                    try { localStorage.setItem(`rra_draft_${pid}`, JSON.stringify(pending)); } catch {}
-                    // Attempt synchronous save via sendBeacon
-                    try {
-                        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/coach_assessments?on_conflict=player_id`;
-                        const payload = JSON.stringify({ player_id: pid, ...pending, updated_at: new Date().toISOString() });
-                        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
-                    } catch {}
-                }
+                flush();
                 e.preventDefault();
                 e.returnValue = 'You have unsaved assessment data.';
             }
         };
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('pagehide', onPageHide);
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('pagehide', onPageHide);
+            window.removeEventListener('beforeunload', onBeforeUnload);
+        };
     }, [saveStatusHook.status]);
 
     // ── Reopen player profile (admin/coach) ──
@@ -788,7 +828,7 @@ export default function CoachAssessment() {
                     }
                 };
                 doSave();
-            }, 2000);
+            }, 800);
         };
 
         const t = techItems(sp.role);
