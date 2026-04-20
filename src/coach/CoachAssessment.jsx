@@ -29,7 +29,7 @@ const ReportCard = React.lazy(() => import("./ReportCard"));
 const EngineGuide = React.lazy(() => import("./EngineGuide"));
 const AdminDashboard = React.lazy(() => import("./AdminDashboard"));
 const AdminProfiles = React.lazy(() => import("./AdminProfiles"));
-const SquadAssignment = React.lazy(() => import("./SquadAssignment"));
+const SquadRoster = React.lazy(() => import("./SquadRoster"));
 
 // ═══ BOTTOM NAV BAR ═══
 const NAV_ITEMS_ADMIN = [
@@ -327,6 +327,21 @@ export default function CoachAssessment() {
 
     const sp = selP ? players.find(p => p.id === selP) : null;
 
+    // Per-player weekday + weekend squad lookup, derived from sp_squad_players
+    const playerSquadMap = useMemo(() => {
+        const wdLookup = buildRosterLookup(dbRosters.skillWeek);
+        const weLookup = buildRosterLookup(dbRosters.gameSenseWeek);
+        const byId = {};
+        [...dbRosters.skillWeek, ...dbRosters.gameSenseWeek].forEach(sq => { byId[sq.id] = sq; });
+        const map = {};
+        players.filter(p => p.submitted).forEach(p => {
+            const wdId = matchPlayerToSquad(wdLookup, dbRosters.skillWeek, p.name);
+            const weId = matchPlayerToSquad(weLookup, dbRosters.gameSenseWeek, p.name);
+            map[p.id] = { wd: byId[wdId] || null, we: byId[weId] || null };
+        });
+        return map;
+    }, [players, dbRosters]);
+
     // Memoize PDI/CCM computation for roster — avoids recalculating on every search/filter/render
     const rosterScores = useMemo(() => {
         const map = {};
@@ -387,12 +402,12 @@ export default function CoachAssessment() {
         </div>
     );
 
-    // ═══ SQUAD ASSIGNMENT ═══
+    // ═══ SQUAD ROSTER ═══
     if (cView === "squads" && isAdmin) return (
         <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
-            <Hdr label="SQUAD ALLOCATION" onLogoClick={signOut} />
-            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading squad engine...</div>}>
-                <SquadAssignment />
+            <Hdr label="SQUAD ROSTER" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading squad roster...</div>}>
+                <SquadRoster />
             </Suspense>
             <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
         </div>
@@ -500,6 +515,17 @@ export default function CoachAssessment() {
                                 </div>
                             </div>
                             <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 1 }}>{a}yo • {br} • {ro?.sh || "?"} • {p.club}</div>
+                            {(() => {
+                                const sq = playerSquadMap[p.id];
+                                if (!sq || (!sq.wd && !sq.we)) return null;
+                                return (
+                                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F, marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        {sq.wd && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: sq.wd.color, display: 'inline-block' }} /><span style={{ color: B.g600, fontWeight: 600 }}>{sq.wd.label}</span></span>}
+                                        {sq.we && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: sq.we.color, display: 'inline-block' }} /><span style={{ color: B.g600, fontWeight: 600 }}>{sq.we.label}</span></span>}
+                                        {(!sq.wd || !sq.we) && <span style={{ color: B.amb, fontWeight: 600 }}>· {!sq.wd ? 'No WD squad' : 'No WE squad'}</span>}
+                                    </div>
+                                );
+                            })()}
                             <div style={{ fontSize: 9, color: B.g400, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                                 <span>{p.grades?.length || 0} competition level(s) • {hasCd ? "Coach assessed" : hasSelf ? "Self-assessed" : "Awaiting"}{dn?.provisional && hasSelf ? " (provisional)" : ""}</span>
                                 {isAdmin && <button onClick={(e) => handleReopenProfile(e, p.id, p.name)} style={{ padding: "2px 8px", borderRadius: 4, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 8, fontWeight: 700, color: B.g400, cursor: "pointer", fontFamily: F, textTransform: "uppercase", letterSpacing: .3 }}>Reopen</button>}
