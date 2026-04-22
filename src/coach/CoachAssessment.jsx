@@ -680,6 +680,8 @@ export default function CoachAssessment() {
                     {ccmR.ccm > 0 && <Ring value={Math.round(ccmR.ccm * 100)} size={70} color={B.bl} label="CCM" />}
                 </div>
 
+                <button onClick={() => { currentPlayerIdRef.current = sp.id; setCView("assess"); setCPage(0); goTop(); }} style={{ ...btnSty(true, true), marginTop: 0, marginBottom: 12 }}>BEGIN ASSESSMENT →</button>
+
                 <SecH title="Competition History" sub={`${sp.grades?.length || 0} competition level(s)`} />
                 {(sp.grades || []).map((g, gi) => {
                     const gTier = (compTiers || []).find(t => t.code === g.level);
@@ -1133,14 +1135,14 @@ export default function CoachAssessment() {
                         <button disabled={!nextP} onClick={() => { if (nextP) { setSelP(nextP.id); setCPage(0); goTop(); } }}
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${nextP ? B.g200 : 'transparent'}`, background: 'transparent', color: nextP ? B.g600 : B.g200, fontSize: 14, cursor: nextP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>→</button>
                     </div>
-                    <div style={{ padding: '4px 12px', background: B.g50, borderBottom: `1px solid ${B.g100}`, display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ padding: '8px 12px', background: B.g50, borderBottom: `1px solid ${B.g100}`, display: 'flex', justifyContent: 'center' }}>
                         <button onClick={() => {
                             if (saveStatusHook.status === 'saving' || saveStatusHook.status === 'error') {
                                 if (!confirm('Changes are still saving. Leave anyway?')) return;
                             }
                             setCView("list"); setSelP(null); goTop();
                         }}
-                            style={{ fontSize: 9, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', fontFamily: F, textDecoration: 'underline' }}>← Back to Roster</button>
+                            style={{ fontSize: 12, fontWeight: 700, color: B.bl, background: `${B.bl}10`, border: `1.5px solid ${B.bl}`, borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontFamily: F, minHeight: 40, display: 'flex', alignItems: 'center', gap: 6 }}>← Back to Roster</button>
                     </div>
                 </>);
             })()}
@@ -1175,9 +1177,9 @@ export default function CoachAssessment() {
                 );
             })()}
 
-            <div style={{ paddingBottom: 60 }}>{renderAP()}</div>
+            <div style={{ paddingBottom: 'calc(90px + env(safe-area-inset-bottom))' }}>{renderAP()}</div>
 
-            <div className="rra-fixed-bottom" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", zIndex: 100 }}>
+            <div className="rra-fixed-bottom" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", paddingBottom: 'calc(8px + env(safe-area-inset-bottom))', display: "flex", justifyContent: "space-between", zIndex: 100 }}>
                 <button onClick={() => {
                     if (cPage > 0) { setCPage(p => p - 1); goTop(); }
                     else { setCView("survey"); goTop(); }
