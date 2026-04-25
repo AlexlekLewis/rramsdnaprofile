@@ -172,7 +172,7 @@ const MatchUpCard = React.memo(({ title, sub, matchups, domain, confColor, freqC
 });
 
 export default function PlayerOnboarding() {
-    const { session, signOut, portal } = useAuth();
+    const { session, signOut, portal, refreshUserProfile } = useAuth();
     const { compTiers, assocList, assocComps, vmcuAssocs } = useEngine();
 
     const [pStep, setPStep] = useSessionState('rra_pStep', 0);
@@ -926,6 +926,12 @@ export default function PlayerOnboarding() {
                             notifySlack('submission', { name: pd.name, club: pd.club, role: pd.role, dob: pd.dob, association: pd.assoc });
                             lastSavedRef.current = JSON.stringify(pd);
                             setPStep(7);
+                            // Show the success screen for ~2.5s, then refresh the AuthContext
+                            // so App routing picks up submitted=true and lands the player on
+                            // PlayerPortal (the unified home with DNA / Journal / IDP / Reflection
+                            // tiles). Without this refresh, App re-renders with stale state and
+                            // bounces the player back into onboarding step 1.
+                            setTimeout(() => { try { refreshUserProfile?.(); } catch {} }, 2500);
                         }
                     } catch (e) {
                         console.error('Submit error:', e);
@@ -948,6 +954,11 @@ export default function PlayerOnboarding() {
             <div style={{ fontSize: 44, marginBottom: 12 }}>✓</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: B.grn, fontFamily: F }}>Survey Submitted!</div>
             <div style={{ fontSize: 12, color: B.g600, fontFamily: F, marginTop: 6 }}>Your coaching team will review your details.</div>
+            <div style={{ fontSize: 11, color: B.g400, fontFamily: F, marginTop: 16, fontStyle: 'italic' }}>Taking you to your Player Portal…</div>
+            <button
+                onClick={() => { try { refreshUserProfile?.(); } catch {} }}
+                style={{ marginTop: 20, padding: '10px 20px', borderRadius: 8, border: 'none', background: `linear-gradient(135deg,${B.bl},${B.pk})`, color: B.w, fontSize: 12, fontWeight: 700, fontFamily: F, cursor: 'pointer', letterSpacing: 0.5 }}
+            >Go to my Portal →</button>
         </div>);
         return null;
     };
