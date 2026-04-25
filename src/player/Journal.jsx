@@ -246,10 +246,29 @@ export default function Journal({ session, userProfile, playerId }) {
         setTimeout(() => setSaveMsg(null), duration);
     };
 
+    // Map an error to player-friendly copy
+    const errorCopy = (err) => {
+        const msg = (err?.message || '').toLowerCase();
+        if (msg.includes('auth') || msg.includes('permission') || msg.includes('jwt') || msg.includes('401') || msg.includes('403')) {
+            return 'Session expired — please sign out and sign back in, then try again.';
+        }
+        if (msg.includes('failed to fetch') || msg.includes('network')) {
+            return 'Connection lost — your draft is kept safe, try again in a moment.';
+        }
+        return 'Could not save — your draft is kept safe, try again in a moment.';
+    };
+
+    // Refresh the auth token right before a save fires. Mobile tabs often hold
+    // expired tokens; the SDK doesn't auto-refresh while the tab is asleep.
+    const refreshTokenBeforeSave = async () => {
+        try { await supabase.auth.refreshSession(); } catch (e) { console.warn('Pre-save token refresh failed:', e?.message); }
+    };
+
     // Save weekly review
     const handleSaveWeekly = async () => {
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const allAnswers = weeklyQuestions.map(q => ({ q, a: weeklyAnswers[q] || '' }));
 
             // Save as weekly_review type with effort_rating as a proper DB column
@@ -282,7 +301,7 @@ export default function Journal({ session, userProfile, playerId }) {
             draftDirtyRef.current.weekly = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -291,6 +310,7 @@ export default function Journal({ session, userProfile, playerId }) {
         if (!selectedSessId || !activeSess) return;
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const entry = {
                 session_id: selectedSessId,
                 program_id: activeSess.program_id,
@@ -315,7 +335,7 @@ export default function Journal({ session, userProfile, playerId }) {
             draftDirtyRef.current.session = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -324,6 +344,7 @@ export default function Journal({ session, userProfile, playerId }) {
         if (!freeText.trim()) return;
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const entry = {
                 answers: [{ q: freeTitle.trim() || 'Free Write', a: freeText.trim() }],
                 mood: freeMood,
@@ -339,7 +360,7 @@ export default function Journal({ session, userProfile, playerId }) {
             draftDirtyRef.current.freeform = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -359,6 +380,7 @@ export default function Journal({ session, userProfile, playerId }) {
     const saveEdit = async (entry) => {
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const updates = { mood: editMood };
             if (entry.session_id || entry.entry_type === 'weekly_review') {
                 const qs = (entry.answers || []).map(a => a.q);
@@ -372,7 +394,7 @@ export default function Journal({ session, userProfile, playerId }) {
             showToast('ok', 'Entry updated!');
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to update', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 

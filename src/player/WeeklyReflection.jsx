@@ -135,6 +135,8 @@ export default function WeeklyReflection({ session, userProfile, playerId }) {
         }
         setSaving(true);
         try {
+            // Refresh auth token before submit — mobile tabs often hold expired tokens.
+            try { await supabase.auth.refreshSession(); } catch (e) { console.warn('Pre-submit token refresh failed:', e?.message); }
             const payload = Object.keys(answers).map(k => {
                 const qIdx = parseInt(k);
                 const optIdx = answers[k];
@@ -156,7 +158,14 @@ export default function WeeklyReflection({ session, userProfile, playerId }) {
             setAnswers({});
             await refresh();
         } catch (e) {
-            showMsg('err', e.message || 'Failed to submit — your answers are kept safe, try again');
+            const msg = (e?.message || '').toLowerCase();
+            if (msg.includes('auth') || msg.includes('permission') || msg.includes('jwt') || msg.includes('401') || msg.includes('403')) {
+                showMsg('err', 'Session expired — please sign out and sign back in, then try again.');
+            } else if (msg.includes('failed to fetch') || msg.includes('network')) {
+                showMsg('err', 'Connection lost — your answers are kept safe, try again.');
+            } else {
+                showMsg('err', 'Could not submit — your answers are kept safe, try again.');
+            }
         } finally {
             setSaving(false);
         }
