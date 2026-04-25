@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from "react";
-import { loadRecentSessionsForPlayer, loadJournalHistory, saveJournalEntry, updateJournalEntry } from "../db/journalDb";
+import React, { useState, useEffect, useRef } from "react";
+import { loadRecentSessionsForPlayer, loadJournalHistory, saveJournalEntry, updateJournalEntry, flushJournalEntryBeacon } from "../db/journalDb";
 import { calculateJournalStreak } from "../db/assessmentDb";
+import { supabase } from "../supabaseClient";
 import { B, F, sCard } from "../data/theme";
+
+// localStorage keys for unsaved draft recovery — survives tab suspension on mobile
+const DRAFT_KEYS = {
+    weekly: 'rra_journal_weekly_draft',
+    session: 'rra_journal_session_draft',
+    freeform: 'rra_journal_freeform_draft',
+};
 
 const MOODS = [
     { id: 'great', label: 'Great Day', icon: '🟢', color: B.grn },
@@ -88,6 +96,121 @@ export default function Journal({ session, userProfile, playerId }) {
     const [editFreeText, setEditFreeText] = useState("");
     const [editMood, setEditMood] = useState(null);
 
+    // Synchronously readable copies for mobile lifecycle handlers
+    const authCacheRef = useRef({ token: null, userId: null });
+    const editingEntryRef = useRef(null); // the entry currently being edited (with id)
+    const draftDirtyRef = useRef({ weekly: false, session: false, freeform: false });
+
+    // Cache token for keepalive beacon firing during tab suspension
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (s) => { if (!cancelled) authCacheRef.current = { token: s?.access_token || null, userId: s?.user?.id || null }; };
+        supabase.auth.getSession().then(({ data }) => apply(data?.session));
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => apply(s));
+        return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
+    }, []);
+
+    // ── Restore unsaved drafts from localStorage on mount ──
+    // If iOS killed the tab mid-typing, the draft is still here.
+    // Sets `restoredTabs` so we can show players which unfinished entries we kept.
+    const [restoredTabs, setRestoredTabs] = useState([]); // ['weekly'|'new'|'freeform']
+    useEffect(() => {
+        const restored = [];
+        try {
+            const w = localStorage.getItem(DRAFT_KEYS.weekly);
+            if (w) {
+                const d = JSON.parse(w);
+                let touched = false;
+                if (d?.weeklyAnswers) { setWeeklyAnswers(d.weeklyAnswers); touched = true; }
+                if (d?.weeklyMood) { setWeeklyMood(d.weeklyMood); touched = true; }
+                if (d?.effortRating) { setEffortRating(d.effortRating); touched = true; }
+                if (touched) restored.push('weekly');
+            }
+            const s = localStorage.getItem(DRAFT_KEYS.session);
+            if (s) {
+                const d = JSON.parse(s);
+                let touched = false;
+                if (d?.answers) { setAnswers(d.answers); touched = true; }
+                if (d?.mood) { setMood(d.mood); touched = true; }
+                if (d?.selectedSessId) { setSelectedSessId(d.selectedSessId); touched = true; }
+                if (touched) restored.push('new');
+            }
+            const f = localStorage.getItem(DRAFT_KEYS.freeform);
+            if (f) {
+                const d = JSON.parse(f);
+                let touched = false;
+                if (d?.freeText) { setFreeText(d.freeText); touched = true; }
+                if (d?.freeTitle) { setFreeTitle(d.freeTitle); touched = true; }
+                if (d?.freeMood) { setFreeMood(d.freeMood); touched = true; }
+                if (touched) restored.push('freeform');
+            }
+        } catch (e) { console.warn('Restore journal draft failed:', e?.message); }
+        if (restored.length) {
+            setRestoredTabs(restored);
+            // Default to the first restored tab so the player lands on it
+            setActiveTab(restored[0]);
+        }
+    }, []);
+
+    // ── Auto-stash in-progress drafts to localStorage on every change ──
+    // This is the safety net that prevents data loss if iOS suspends the tab.
+    useEffect(() => {
+        const hasContent = Object.values(weeklyAnswers).some(v => (v || '').trim()) || weeklyMood || effortRating;
+        if (hasContent) {
+            try { localStorage.setItem(DRAFT_KEYS.weekly, JSON.stringify({ weeklyAnswers, weeklyMood, effortRating })); } catch {}
+            draftDirtyRef.current.weekly = true;
+        }
+    }, [weeklyAnswers, weeklyMood, effortRating]);
+
+    useEffect(() => {
+        const hasContent = Object.values(answers).some(v => (v || '').trim()) || mood;
+        if (hasContent && selectedSessId) {
+            try { localStorage.setItem(DRAFT_KEYS.session, JSON.stringify({ answers, mood, selectedSessId })); } catch {}
+            draftDirtyRef.current.session = true;
+        }
+    }, [answers, mood, selectedSessId]);
+
+    useEffect(() => {
+        const hasContent = (freeText || '').trim() || (freeTitle || '').trim() || freeMood;
+        if (hasContent) {
+            try { localStorage.setItem(DRAFT_KEYS.freeform, JSON.stringify({ freeText, freeTitle, freeMood })); } catch {}
+            draftDirtyRef.current.freeform = true;
+        }
+    }, [freeText, freeTitle, freeMood]);
+
+    // Track whichever entry is currently being edited so the beacon can flush it
+    useEffect(() => {
+        if (editingId) {
+            editingEntryRef.current = { id: editingId, answers: editAnswers, mood: editMood, freeText: editFreeText };
+        } else {
+            editingEntryRef.current = null;
+        }
+    }, [editingId, editAnswers, editMood, editFreeText]);
+
+    // ── Mobile lifecycle: flush edits via keepalive beacon when tab backgrounds ──
+    useEffect(() => {
+        const flush = () => {
+            const entry = editingEntryRef.current;
+            if (!entry?.id) return; // only flushes EDITS to existing entries; new drafts are in localStorage
+            const { token, userId } = authCacheRef.current;
+            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            if (!token || !userId) return;
+            // Build the payload shape that flushJournalEntryBeacon expects
+            const payload = entry.freeText
+                ? { id: entry.id, answers: [{ q: 'Free Write', a: entry.freeText }], mood: entry.mood }
+                : { id: entry.id, answers: Object.entries(entry.answers || {}).map(([q, a]) => ({ q, a: a || '' })), mood: entry.mood };
+            flushJournalEntryBeacon(payload, token, anonKey, userId);
+        };
+        const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+        const onPageHide = () => flush();
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('pagehide', onPageHide);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('pagehide', onPageHide);
+        };
+    }, []);
+
     useEffect(() => {
         if (!userProfile?.id) return;
         setLoading(true);
@@ -137,10 +260,29 @@ export default function Journal({ session, userProfile, playerId }) {
         setTimeout(() => setSaveMsg(null), duration);
     };
 
+    // Map an error to player-friendly copy
+    const errorCopy = (err) => {
+        const msg = (err?.message || '').toLowerCase();
+        if (msg.includes('auth') || msg.includes('permission') || msg.includes('jwt') || msg.includes('401') || msg.includes('403')) {
+            return 'Session expired — please sign out and sign back in, then try again.';
+        }
+        if (msg.includes('failed to fetch') || msg.includes('network')) {
+            return 'Connection lost — your draft is kept safe, try again in a moment.';
+        }
+        return 'Could not save — your draft is kept safe, try again in a moment.';
+    };
+
+    // Refresh the auth token right before a save fires. Mobile tabs often hold
+    // expired tokens; the SDK doesn't auto-refresh while the tab is asleep.
+    const refreshTokenBeforeSave = async () => {
+        try { await supabase.auth.refreshSession(); } catch (e) { console.warn('Pre-save token refresh failed:', e?.message); }
+    };
+
     // Save weekly review
     const handleSaveWeekly = async () => {
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const allAnswers = weeklyQuestions.map(q => ({ q, a: weeklyAnswers[q] || '' }));
 
             // Save as weekly_review type with effort_rating as a proper DB column
@@ -169,9 +311,12 @@ export default function Journal({ session, userProfile, playerId }) {
             setWeeklyAlreadyDone(true);
             setStreak(prev => prev + 1);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.weekly); } catch {}
+            draftDirtyRef.current.weekly = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'weekly'));
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — check your connection', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -180,6 +325,7 @@ export default function Journal({ session, userProfile, playerId }) {
         if (!selectedSessId || !activeSess) return;
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const entry = {
                 session_id: selectedSessId,
                 program_id: activeSess.program_id,
@@ -200,9 +346,12 @@ export default function Journal({ session, userProfile, playerId }) {
             setAnswers({});
             setMood(null);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.session); } catch {}
+            draftDirtyRef.current.session = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'new'));
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — check your connection', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -211,6 +360,7 @@ export default function Journal({ session, userProfile, playerId }) {
         if (!freeText.trim()) return;
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const entry = {
                 answers: [{ q: freeTitle.trim() || 'Free Write', a: freeText.trim() }],
                 mood: freeMood,
@@ -222,9 +372,12 @@ export default function Journal({ session, userProfile, playerId }) {
             setFreeTitle("");
             setFreeMood(null);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.freeform); } catch {}
+            draftDirtyRef.current.freeform = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'freeform'));
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -244,6 +397,7 @@ export default function Journal({ session, userProfile, playerId }) {
     const saveEdit = async (entry) => {
         setSaving(true);
         try {
+            await refreshTokenBeforeSave();
             const updates = { mood: editMood };
             if (entry.session_id || entry.entry_type === 'weekly_review') {
                 const qs = (entry.answers || []).map(a => a.q);
@@ -257,7 +411,7 @@ export default function Journal({ session, userProfile, playerId }) {
             showToast('ok', 'Entry updated!');
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to update', 5000);
+            showToast('err', errorCopy(err), 6000);
         } finally { setSaving(false); }
     };
 
@@ -355,6 +509,16 @@ export default function Journal({ session, userProfile, playerId }) {
             </div>
 
             <div style={{ padding: 16 }}>
+                {restoredTabs.includes(activeTab) && (
+                    <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: `${B.bl}10`, border: `1px solid ${B.bl}40`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: F }}>
+                        <div style={{ fontSize: 18 }}>💾</div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: B.bl }}>Your unfinished entry was saved</div>
+                            <div style={{ fontSize: 10, color: B.g600, marginTop: 2 }}>Pick up where you left off, then tap Save when you're done.</div>
+                        </div>
+                        <button onClick={() => setRestoredTabs(prev => prev.filter(t => t !== activeTab))} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${B.bl}40`, background: B.w, color: B.bl, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: F }}>Got it</button>
+                    </div>
+                )}
 
                 {/* ═══ WEEKLY REVIEW ═══ */}
                 {activeTab === "weekly" && (

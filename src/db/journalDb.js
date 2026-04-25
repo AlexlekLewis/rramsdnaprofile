@@ -183,3 +183,40 @@ export async function deleteJournalPrompt(id) {
         .eq('id', id);
     if (error) throw error;
 }
+
+// ═══ JOURNAL BEACON FLUSH (mobile-reliable) ═══
+// Fires a keepalive POST so an in-progress journal entry survives the tab
+// going to background or being killed on iOS. Only flushes existing entries
+// (id present); brand-new unsaved entries fall through to a localStorage stash.
+export function flushJournalEntryBeacon(entry, accessToken, anonKey, userId) {
+    if (!entry?.id || !userId || !accessToken || !anonKey) return false;
+    const entryType = entry._entryType || (entry.session_id ? 'session' : 'freeform');
+    const row = {
+        id: entry.id,
+        player_id: userId,
+        session_id: entry.session_id || null,
+        program_id: entry.program_id || null,
+        entry_type: entryType,
+        responses: { answers: entry.answers || [], mood: entry.mood || null },
+        updated_at: new Date().toISOString(),
+    };
+    if (entry._weekNumber) row.week_number = entry._weekNumber;
+    if (entry._effortRating != null) row.effort_rating = entry._effortRating;
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/journal_entries?on_conflict=id`;
+    try {
+        fetch(url, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey': anonKey,
+                'Prefer': 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([row]),
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
