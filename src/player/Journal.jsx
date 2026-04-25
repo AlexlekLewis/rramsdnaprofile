@@ -112,30 +112,44 @@ export default function Journal({ session, userProfile, playerId }) {
 
     // ── Restore unsaved drafts from localStorage on mount ──
     // If iOS killed the tab mid-typing, the draft is still here.
+    // Sets `restoredTabs` so we can show players which unfinished entries we kept.
+    const [restoredTabs, setRestoredTabs] = useState([]); // ['weekly'|'new'|'freeform']
     useEffect(() => {
+        const restored = [];
         try {
             const w = localStorage.getItem(DRAFT_KEYS.weekly);
             if (w) {
                 const d = JSON.parse(w);
-                if (d?.weeklyAnswers) setWeeklyAnswers(d.weeklyAnswers);
-                if (d?.weeklyMood) setWeeklyMood(d.weeklyMood);
-                if (d?.effortRating) setEffortRating(d.effortRating);
+                let touched = false;
+                if (d?.weeklyAnswers) { setWeeklyAnswers(d.weeklyAnswers); touched = true; }
+                if (d?.weeklyMood) { setWeeklyMood(d.weeklyMood); touched = true; }
+                if (d?.effortRating) { setEffortRating(d.effortRating); touched = true; }
+                if (touched) restored.push('weekly');
             }
             const s = localStorage.getItem(DRAFT_KEYS.session);
             if (s) {
                 const d = JSON.parse(s);
-                if (d?.answers) setAnswers(d.answers);
-                if (d?.mood) setMood(d.mood);
-                if (d?.selectedSessId) setSelectedSessId(d.selectedSessId);
+                let touched = false;
+                if (d?.answers) { setAnswers(d.answers); touched = true; }
+                if (d?.mood) { setMood(d.mood); touched = true; }
+                if (d?.selectedSessId) { setSelectedSessId(d.selectedSessId); touched = true; }
+                if (touched) restored.push('new');
             }
             const f = localStorage.getItem(DRAFT_KEYS.freeform);
             if (f) {
                 const d = JSON.parse(f);
-                if (d?.freeText) setFreeText(d.freeText);
-                if (d?.freeTitle) setFreeTitle(d.freeTitle);
-                if (d?.freeMood) setFreeMood(d.freeMood);
+                let touched = false;
+                if (d?.freeText) { setFreeText(d.freeText); touched = true; }
+                if (d?.freeTitle) { setFreeTitle(d.freeTitle); touched = true; }
+                if (d?.freeMood) { setFreeMood(d.freeMood); touched = true; }
+                if (touched) restored.push('freeform');
             }
         } catch (e) { console.warn('Restore journal draft failed:', e?.message); }
+        if (restored.length) {
+            setRestoredTabs(restored);
+            // Default to the first restored tab so the player lands on it
+            setActiveTab(restored[0]);
+        }
     }, []);
 
     // ── Auto-stash in-progress drafts to localStorage on every change ──
@@ -299,6 +313,7 @@ export default function Journal({ session, userProfile, playerId }) {
             setActiveTab("history");
             try { localStorage.removeItem(DRAFT_KEYS.weekly); } catch {}
             draftDirtyRef.current.weekly = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'weekly'));
         } catch (err) {
             console.error(err);
             showToast('err', errorCopy(err), 6000);
@@ -333,6 +348,7 @@ export default function Journal({ session, userProfile, playerId }) {
             setActiveTab("history");
             try { localStorage.removeItem(DRAFT_KEYS.session); } catch {}
             draftDirtyRef.current.session = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'new'));
         } catch (err) {
             console.error(err);
             showToast('err', errorCopy(err), 6000);
@@ -358,6 +374,7 @@ export default function Journal({ session, userProfile, playerId }) {
             setActiveTab("history");
             try { localStorage.removeItem(DRAFT_KEYS.freeform); } catch {}
             draftDirtyRef.current.freeform = false;
+            setRestoredTabs(prev => prev.filter(t => t !== 'freeform'));
         } catch (err) {
             console.error(err);
             showToast('err', errorCopy(err), 6000);
@@ -492,6 +509,16 @@ export default function Journal({ session, userProfile, playerId }) {
             </div>
 
             <div style={{ padding: 16 }}>
+                {restoredTabs.includes(activeTab) && (
+                    <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: `${B.bl}10`, border: `1px solid ${B.bl}40`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: F }}>
+                        <div style={{ fontSize: 18 }}>💾</div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: B.bl }}>Your unfinished entry was saved</div>
+                            <div style={{ fontSize: 10, color: B.g600, marginTop: 2 }}>Pick up where you left off, then tap Save when you're done.</div>
+                        </div>
+                        <button onClick={() => setRestoredTabs(prev => prev.filter(t => t !== activeTab))} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${B.bl}40`, background: B.w, color: B.bl, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: F }}>Got it</button>
+                    </div>
+                )}
 
                 {/* ═══ WEEKLY REVIEW ═══ */}
                 {activeTab === "weekly" && (
