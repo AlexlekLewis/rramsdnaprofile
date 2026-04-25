@@ -150,6 +150,22 @@ export function AuthProvider({ children }) {
         }
     };
 
+    // Re-fetch the user_profiles row from the DB and update local state.
+    // Call this after operations that flip submitted=true (e.g. profile submit) so
+    // the App routing picks up the new state without a full page reload.
+    const refreshUserProfile = async () => {
+        const uid = session?.user?.id;
+        if (!uid) return null;
+        try {
+            const fresh = await loadUserProfile(uid);
+            if (fresh) setUserProfile(fresh);
+            return fresh;
+        } catch (e) {
+            console.warn('refreshUserProfile failed:', e?.message);
+            return null;
+        }
+    };
+
     // Derive portal from role (default to role if valid, else null)
     const portal = userProfile?.role || null;
 
@@ -169,6 +185,7 @@ export function AuthProvider({ children }) {
         signIn,
         signUp,
         signOut,
+        refreshUserProfile,
         joinRole,
         setJoinRole,
     };
