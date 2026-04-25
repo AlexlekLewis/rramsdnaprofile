@@ -3,13 +3,17 @@
 // they haven't answered yet), answer the 3 multi-choice questions, and view
 // a history of their past responses.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { B, F, sCard } from '../data/theme';
 import {
     loadPendingReflectionsForPlayer,
     loadPlayerResponseHistory,
     submitReflectionResponse,
+    flushReflectionResponseBeacon,
 } from '../db/reflectionsDb';
+import { supabase } from '../supabaseClient';
+
+const draftKeyFor = (reflectionId) => `rra_reflection_draft_${reflectionId}`;
 
 export default function WeeklyReflection({ session, userProfile, playerId }) {
     const authUserId = session?.user?.id;
@@ -20,6 +24,76 @@ export default function WeeklyReflection({ session, userProfile, playerId }) {
     const [answers, setAnswers] = useState({}); // { qIdx: optIdx }
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState(null);
+
+    // Synchronously readable copies for mobile lifecycle handlers
+    const authCacheRef = useRef({ token: null });
+    const activeRefRef = useRef(null);
+    const answersRef = useRef({});
+    useEffect(() => { activeRefRef.current = activeRef; }, [activeRef]);
+    useEffect(() => { answersRef.current = answers; }, [answers]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (s) => { if (!cancelled) authCacheRef.current = { token: s?.access_token || null }; };
+        supabase.auth.getSession().then(({ data }) => apply(data?.session));
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => apply(s));
+        return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
+    }, []);
+
+    // Stash in-progress answers to localStorage on every selection so they
+    // survive tab suspension on mobile.
+    useEffect(() => {
+        if (!activeRef?.id) return;
+        if (Object.keys(answers).length === 0) return;
+        try { localStorage.setItem(draftKeyFor(activeRef.id), JSON.stringify(answers)); } catch {}
+    }, [activeRef, answers]);
+
+    // Restore unsaved answers when entering answer mode for a reflection.
+    useEffect(() => {
+        if (!activeRef?.id) return;
+        try {
+            const raw = localStorage.getItem(draftKeyFor(activeRef.id));
+            if (raw) {
+                const stored = JSON.parse(raw);
+                if (stored && typeof stored === 'object') setAnswers(stored);
+            }
+        } catch {}
+    }, [activeRef?.id]);
+
+    // ── Mobile lifecycle: beacon-flush selected answers on tab background ──
+    useEffect(() => {
+        const flush = () => {
+            const aRef = activeRefRef.current;
+            const ans = answersRef.current;
+            if (!aRef?.id || !ans || Object.keys(ans).length === 0) return;
+            const { token } = authCacheRef.current;
+            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            if (!token || !authUserId) return;
+            const questions = aRef.questions || [];
+            const payload = Object.keys(ans).map(k => {
+                const qIdx = parseInt(k);
+                const optIdx = ans[k];
+                return {
+                    question_index: qIdx,
+                    option_index: optIdx,
+                    option_text: questions[qIdx]?.options?.[optIdx],
+                };
+            });
+            flushReflectionResponseBeacon(
+                { reflectionId: aRef.id, playerId: playerId || null, authUserId, answers: payload },
+                token,
+                anonKey,
+            );
+        };
+        const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+        const onPageHide = () => flush();
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('pagehide', onPageHide);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('pagehide', onPageHide);
+        };
+    }, [authUserId, playerId]);
 
     const refresh = async () => {
         if (!authUserId) return;
@@ -77,11 +151,12 @@ export default function WeeklyReflection({ session, userProfile, playerId }) {
                 answers: payload,
             });
             showMsg('ok', 'Thanks for your reflection ✓');
+            try { localStorage.removeItem(draftKeyFor(activeRef.id)); } catch {}
             setActiveRef(null);
             setAnswers({});
             await refresh();
         } catch (e) {
-            showMsg('err', e.message || 'Failed to submit');
+            showMsg('err', e.message || 'Failed to submit — your answers are kept safe, try again');
         } finally {
             setSaving(false);
         }

@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from "react";
-import { loadRecentSessionsForPlayer, loadJournalHistory, saveJournalEntry, updateJournalEntry } from "../db/journalDb";
+import React, { useState, useEffect, useRef } from "react";
+import { loadRecentSessionsForPlayer, loadJournalHistory, saveJournalEntry, updateJournalEntry, flushJournalEntryBeacon } from "../db/journalDb";
 import { calculateJournalStreak } from "../db/assessmentDb";
+import { supabase } from "../supabaseClient";
 import { B, F, sCard } from "../data/theme";
+
+// localStorage keys for unsaved draft recovery — survives tab suspension on mobile
+const DRAFT_KEYS = {
+    weekly: 'rra_journal_weekly_draft',
+    session: 'rra_journal_session_draft',
+    freeform: 'rra_journal_freeform_draft',
+};
 
 const MOODS = [
     { id: 'great', label: 'Great Day', icon: '🟢', color: B.grn },
@@ -88,6 +96,107 @@ export default function Journal({ session, userProfile, playerId }) {
     const [editFreeText, setEditFreeText] = useState("");
     const [editMood, setEditMood] = useState(null);
 
+    // Synchronously readable copies for mobile lifecycle handlers
+    const authCacheRef = useRef({ token: null, userId: null });
+    const editingEntryRef = useRef(null); // the entry currently being edited (with id)
+    const draftDirtyRef = useRef({ weekly: false, session: false, freeform: false });
+
+    // Cache token for keepalive beacon firing during tab suspension
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (s) => { if (!cancelled) authCacheRef.current = { token: s?.access_token || null, userId: s?.user?.id || null }; };
+        supabase.auth.getSession().then(({ data }) => apply(data?.session));
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => apply(s));
+        return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
+    }, []);
+
+    // ── Restore unsaved drafts from localStorage on mount ──
+    // If iOS killed the tab mid-typing, the draft is still here.
+    useEffect(() => {
+        try {
+            const w = localStorage.getItem(DRAFT_KEYS.weekly);
+            if (w) {
+                const d = JSON.parse(w);
+                if (d?.weeklyAnswers) setWeeklyAnswers(d.weeklyAnswers);
+                if (d?.weeklyMood) setWeeklyMood(d.weeklyMood);
+                if (d?.effortRating) setEffortRating(d.effortRating);
+            }
+            const s = localStorage.getItem(DRAFT_KEYS.session);
+            if (s) {
+                const d = JSON.parse(s);
+                if (d?.answers) setAnswers(d.answers);
+                if (d?.mood) setMood(d.mood);
+                if (d?.selectedSessId) setSelectedSessId(d.selectedSessId);
+            }
+            const f = localStorage.getItem(DRAFT_KEYS.freeform);
+            if (f) {
+                const d = JSON.parse(f);
+                if (d?.freeText) setFreeText(d.freeText);
+                if (d?.freeTitle) setFreeTitle(d.freeTitle);
+                if (d?.freeMood) setFreeMood(d.freeMood);
+            }
+        } catch (e) { console.warn('Restore journal draft failed:', e?.message); }
+    }, []);
+
+    // ── Auto-stash in-progress drafts to localStorage on every change ──
+    // This is the safety net that prevents data loss if iOS suspends the tab.
+    useEffect(() => {
+        const hasContent = Object.values(weeklyAnswers).some(v => (v || '').trim()) || weeklyMood || effortRating;
+        if (hasContent) {
+            try { localStorage.setItem(DRAFT_KEYS.weekly, JSON.stringify({ weeklyAnswers, weeklyMood, effortRating })); } catch {}
+            draftDirtyRef.current.weekly = true;
+        }
+    }, [weeklyAnswers, weeklyMood, effortRating]);
+
+    useEffect(() => {
+        const hasContent = Object.values(answers).some(v => (v || '').trim()) || mood;
+        if (hasContent && selectedSessId) {
+            try { localStorage.setItem(DRAFT_KEYS.session, JSON.stringify({ answers, mood, selectedSessId })); } catch {}
+            draftDirtyRef.current.session = true;
+        }
+    }, [answers, mood, selectedSessId]);
+
+    useEffect(() => {
+        const hasContent = (freeText || '').trim() || (freeTitle || '').trim() || freeMood;
+        if (hasContent) {
+            try { localStorage.setItem(DRAFT_KEYS.freeform, JSON.stringify({ freeText, freeTitle, freeMood })); } catch {}
+            draftDirtyRef.current.freeform = true;
+        }
+    }, [freeText, freeTitle, freeMood]);
+
+    // Track whichever entry is currently being edited so the beacon can flush it
+    useEffect(() => {
+        if (editingId) {
+            editingEntryRef.current = { id: editingId, answers: editAnswers, mood: editMood, freeText: editFreeText };
+        } else {
+            editingEntryRef.current = null;
+        }
+    }, [editingId, editAnswers, editMood, editFreeText]);
+
+    // ── Mobile lifecycle: flush edits via keepalive beacon when tab backgrounds ──
+    useEffect(() => {
+        const flush = () => {
+            const entry = editingEntryRef.current;
+            if (!entry?.id) return; // only flushes EDITS to existing entries; new drafts are in localStorage
+            const { token, userId } = authCacheRef.current;
+            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            if (!token || !userId) return;
+            // Build the payload shape that flushJournalEntryBeacon expects
+            const payload = entry.freeText
+                ? { id: entry.id, answers: [{ q: 'Free Write', a: entry.freeText }], mood: entry.mood }
+                : { id: entry.id, answers: Object.entries(entry.answers || {}).map(([q, a]) => ({ q, a: a || '' })), mood: entry.mood };
+            flushJournalEntryBeacon(payload, token, anonKey, userId);
+        };
+        const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+        const onPageHide = () => flush();
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('pagehide', onPageHide);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('pagehide', onPageHide);
+        };
+    }, []);
+
     useEffect(() => {
         if (!userProfile?.id) return;
         setLoading(true);
@@ -169,9 +278,11 @@ export default function Journal({ session, userProfile, playerId }) {
             setWeeklyAlreadyDone(true);
             setStreak(prev => prev + 1);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.weekly); } catch {}
+            draftDirtyRef.current.weekly = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — check your connection', 5000);
+            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
         } finally { setSaving(false); }
     };
 
@@ -200,9 +311,11 @@ export default function Journal({ session, userProfile, playerId }) {
             setAnswers({});
             setMood(null);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.session); } catch {}
+            draftDirtyRef.current.session = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save — check your connection', 5000);
+            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
         } finally { setSaving(false); }
     };
 
@@ -222,9 +335,11 @@ export default function Journal({ session, userProfile, playerId }) {
             setFreeTitle("");
             setFreeMood(null);
             setActiveTab("history");
+            try { localStorage.removeItem(DRAFT_KEYS.freeform); } catch {}
+            draftDirtyRef.current.freeform = false;
         } catch (err) {
             console.error(err);
-            showToast('err', 'Failed to save', 5000);
+            showToast('err', 'Failed to save — your draft is kept safe, try again in a moment', 5000);
         } finally { setSaving(false); }
     };
 

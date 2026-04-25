@@ -20,7 +20,7 @@ import {
 } from "../data/skillItems";
 import { FMTS, BAT_H, BWL_T } from "../data/competitionData";
 import { getAge, techItems } from "../engine/ratingEngine";
-import { savePlayerToDB, saveDraftToDB, loadDraftFromDB, submitPlayerViaRPC } from "../db/playerDb";
+import { savePlayerToDB, saveDraftToDB, loadDraftFromDB, submitPlayerViaRPC, flushPlayerDraftBeacon } from "../db/playerDb";
 import { supabase, notifySlack } from "../supabaseClient";
 import { PLAYER_DEFS } from "../data/skillDefinitions";
 import {
@@ -188,15 +188,61 @@ export default function PlayerOnboarding() {
     const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
     const [draftLoading, setDraftLoading] = useState(!!session?.user?.id);
     const [draftLoadError, setDraftLoadError] = useState(null);
+    // How many pixels the on-screen mobile keyboard is covering. Used to lift the
+    // fixed footer (Back / Save / Next buttons) above the keyboard so they're tappable.
+    const [kbOffset, setKbOffset] = useState(0);
 
     const stepStartRef = useRef(Date.now());
     const pdRef = useRef(pd);
     const lastSavedRef = useRef(null);
     const sessionRef = useRef(session);
     const savingRef = useRef(saving);
+    // Synchronously readable copies for mobile lifecycle handlers (visibilitychange / pagehide)
+    // — these can't await getSession() before iOS suspends the tab.
+    const draftIdRef = useRef(null);
+    const pStepRef = useRef(0);
+    const authCacheRef = useRef({ token: null, userId: null });
     useEffect(() => { pdRef.current = pd; }, [pd]);
     useEffect(() => { sessionRef.current = session; }, [session]);
     useEffect(() => { savingRef.current = saving; }, [saving]);
+    useEffect(() => { draftIdRef.current = draftId; }, [draftId]);
+    useEffect(() => { pStepRef.current = pStep; }, [pStep]);
+
+    // Cache the current access token + userId so mobile lifecycle handlers can fire
+    // a keepalive beacon synchronously. supabase.auth.getSession() is async and iOS
+    // may suspend the tab before it resolves.
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (s) => {
+            if (cancelled) return;
+            authCacheRef.current = {
+                token: s?.access_token || null,
+                userId: s?.user?.id || null,
+            };
+        };
+        supabase.auth.getSession().then(({ data }) => apply(data?.session));
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => apply(s));
+        return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
+    }, []);
+
+    // Lift the fixed footer above the mobile keyboard.
+    // visualViewport shrinks when the keyboard opens — the difference is the
+    // amount of screen the keyboard is covering. Apply that as a bottom offset.
+    useEffect(() => {
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const updateOffset = () => {
+            const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            setKbOffset(offset);
+        };
+        updateOffset();
+        vv.addEventListener('resize', updateOffset);
+        vv.addEventListener('scroll', updateOffset);
+        return () => {
+            vv.removeEventListener('resize', updateOffset);
+            vv.removeEventListener('scroll', updateOffset);
+        };
+    }, []);
 
     // ── Load saved draft from database on mount ──
     // CRITICAL: localStorage may have MORE data than the DB if auto-save was broken.
@@ -317,22 +363,37 @@ export default function PlayerOnboarding() {
     }, [pStep]);
 
     // ── Mobile tab backgrounding protection ──
-    // Mobile Safari kills background tabs after ~30s. When the tab wakes up,
-    // immediately refresh the session token and trigger a save if needed.
+    // Mobile Safari kills background tabs after ~30s. Two paths:
+    //   (a) Tab going HIDDEN → fire keepalive beacon synchronously (survives suspension).
+    //   (b) Tab coming back VISIBLE → refresh token and save any pending changes.
     useEffect(() => {
+        const flushBeacon = () => {
+            const step = pStepRef.current;
+            if (step <= 0 || step >= 7) return;
+            const pd = pdRef.current;
+            const hasChanges = lastSavedRef.current !== JSON.stringify(pd);
+            if (!hasChanges) return;
+            const draftId = draftIdRef.current;
+            const { token, userId } = authCacheRef.current;
+            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            // Always preserve to localStorage as a last-resort safety net
+            try { localStorage.setItem('rra_pd', JSON.stringify(pd)); localStorage.setItem('rra_pStep', String(step)); } catch {}
+            // Beacon only works once we have a draftId on the server; first save still
+            // happens via the regular saveDraft path triggered by typing or interval.
+            if (draftId && token && userId) {
+                flushPlayerDraftBeacon(pd, step, draftId, token, anonKey, userId);
+            }
+        };
         const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'hidden') {
+                flushBeacon();
+                return;
+            }
             if (document.visibilityState === 'visible' && pStep > 0 && pStep < 7) {
-                // Tab just became visible again — refresh token immediately
-                try {
-                    await supabase.auth.refreshSession();
-                } catch (e) {
-                    console.warn('Resume token refresh failed:', e.message);
-                }
-                // Trigger save if there are unsaved changes
+                try { await supabase.auth.refreshSession(); }
+                catch (e) { console.warn('Resume token refresh failed:', e.message); }
                 const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
-                if (hasChanges && !saving) {
-                    saveDraft();
-                }
+                if (hasChanges && !saving) { saveDraft(); }
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -340,13 +401,23 @@ export default function PlayerOnboarding() {
     }, [pStep, saving]);
 
     // ── Warn player if they try to close with unsaved changes ──
-    // Uses both beforeunload (desktop) and pagehide (mobile Safari/Chrome)
+    // Uses both beforeunload (desktop) and pagehide (mobile Safari/Chrome).
+    // pagehide fires the keepalive beacon synchronously — async saveDraft would die mid-flight.
     useEffect(() => {
         const handleUnload = (e) => {
             if (pStep > 0 && pStep < 7) {
                 trackEvent(EVT.SURVEY_ABANDON, { step: pStep, elapsed: Date.now() - stepStartRef.current });
                 const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
-                if (hasChanges) { e.preventDefault(); e.returnValue = ''; }
+                if (hasChanges) {
+                    // Fire beacon before unload prompt
+                    const draftId = draftIdRef.current;
+                    const { token, userId } = authCacheRef.current;
+                    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                    if (draftId && token && userId) {
+                        flushPlayerDraftBeacon(pdRef.current, pStep, draftId, token, anonKey, userId);
+                    }
+                    e.preventDefault(); e.returnValue = '';
+                }
             }
         };
         const handlePageHide = () => {
@@ -354,8 +425,13 @@ export default function PlayerOnboarding() {
                 const hasChanges = lastSavedRef.current !== JSON.stringify(pdRef.current);
                 if (hasChanges) {
                     trackEvent(EVT.SURVEY_ABANDON, { step: pStep, elapsed: Date.now() - stepStartRef.current });
-                    // Force an emergency save — pagehide fires reliably on mobile
-                    saveDraft();
+                    const draftId = draftIdRef.current;
+                    const { token, userId } = authCacheRef.current;
+                    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                    try { localStorage.setItem('rra_pd', JSON.stringify(pdRef.current)); localStorage.setItem('rra_pStep', String(pStep)); } catch {}
+                    if (draftId && token && userId) {
+                        flushPlayerDraftBeacon(pdRef.current, pStep, draftId, token, anonKey, userId);
+                    }
                 }
             }
         };
@@ -366,6 +442,18 @@ export default function PlayerOnboarding() {
             window.removeEventListener('pagehide', handlePageHide);
         };
     }, [pStep]);
+
+    // ── Debounced field-level autosave: ~1.5s after typing stops ──
+    // Complements the 30s interval — saves earlier so less is at risk if the tab dies.
+    useEffect(() => {
+        if (pStep < 1 || pStep >= 7) return;
+        const hasChanges = lastSavedRef.current !== JSON.stringify(pd);
+        if (!hasChanges) return;
+        const t = setTimeout(() => {
+            if (!savingRef.current) saveDraft();
+        }, 1500);
+        return () => clearTimeout(t);
+    }, [pd, pStep]);
 
     const stpN = ["Profile", "Competition History", "T20 Identity", "Self-Assessment", "Player Voice", "Medical & Goals", "Review"];
     const age = getAge(pd.dob);
@@ -941,10 +1029,17 @@ export default function PlayerOnboarding() {
 
         <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...getDkWrap() }}>
             {stepError && <div style={{ padding: '10px 14px', marginBottom: 8, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: F }}>{stepError}</div>}
+            {pStep > 0 && pStep < 7 && saveStatus !== 'idle' && (
+                <div style={{ position: 'sticky', top: 8, zIndex: 50, marginBottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <div style={{ padding: '5px 12px', borderRadius: 999, fontSize: 10, fontWeight: 700, fontFamily: F, letterSpacing: 0.3, boxShadow: '0 2px 6px rgba(0,0,0,0.08)', background: saveStatus === 'saved' ? `${B.grn}` : saveStatus === 'error' ? B.red : B.nvD, color: B.w }}>
+                        {saveStatus === 'saving' ? '⏳ Saving…' : saveStatus === 'saved' ? '✓ Saved' : '⚠ Save failed — will retry'}
+                    </div>
+                </div>
+            )}
             {renderP()}
         </div>
 
-        {pStep < 7 && <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 100 }}>
+        {pStep < 7 && <div style={{ position: "fixed", bottom: kbOffset, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", paddingBottom: `calc(8px + env(safe-area-inset-bottom, 0px))`, display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 100, transition: 'bottom 0.2s' }}>
             <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else handleSignOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>
             <button disabled={saving} onClick={() => saveDraft()} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g300}`, background: saveStatus === 'saved' ? `${B.grn}10` : saveStatus === 'error' ? '#FEE2E2' : 'transparent', fontSize: 11, fontWeight: 600, color: saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g600, cursor: saving ? 'default' : 'pointer', fontFamily: F, transition: 'all 0.2s' }}>
                 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Save Failed' : 'Save Progress'}

@@ -254,6 +254,36 @@ export default function CoachAssessment() {
         return () => { cancelled = true; try { sub?.subscription?.unsubscribe?.(); } catch {} };
     }, []);
 
+    // ── Periodic token refresh so the cached token can't go stale ──
+    // onAuthStateChange only fires when the SDK refreshes — which it pauses while
+    // the tab is backgrounded. Coaches assessing through a long session may have
+    // an expired cached token by the time the beacon fires. Refreshing every 10
+    // minutes (and immediately on visibility resume) keeps it fresh.
+    useEffect(() => {
+        let cancelled = false;
+        const tick = async () => {
+            if (cancelled) return;
+            try {
+                const { data } = await supabase.auth.refreshSession();
+                if (!cancelled && data?.session?.access_token) {
+                    authCacheRef.current = {
+                        token: data.session.access_token,
+                        userId: data.session.user?.id || authCacheRef.current.userId,
+                        userEmail: data.session.user?.email || authCacheRef.current.userEmail,
+                    };
+                }
+            } catch (e) { console.warn('Coach token refresh failed:', e?.message); }
+        };
+        const interval = setInterval(tick, 10 * 60 * 1000);
+        const onResume = () => { if (document.visibilityState === 'visible') tick(); };
+        document.addEventListener('visibilitychange', onResume);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onResume);
+        };
+    }, []);
+
     // ── Flush pending saves on tab background / close (mobile-reliable) ──
     // iOS Safari often doesn't fire beforeunload when locking the phone or
     // switching apps — but it DOES fire visibilitychange (hidden) and pagehide.

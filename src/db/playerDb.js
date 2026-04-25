@@ -554,6 +554,43 @@ export function flushAssessmentBeacon(playerId, cd, accessToken, anonKey, opts =
     }
 }
 
+// ═══ PLAYER ONBOARDING DRAFT BEACON ═══
+// Flushes the in-progress player profile to the database when the tab goes
+// to background or unloads. Mirrors flushAssessmentBeacon. Requires an existing
+// draftId — if none, the caller should fall through to a localStorage stash.
+export function flushPlayerDraftBeacon(pd, step, draftId, accessToken, anonKey, authUserId) {
+    if (!draftId || !accessToken || !anonKey || !authUserId) return false;
+    const progress = pd?.onboardingProgress || {};
+    const row = {
+        id: draftId,
+        ...buildPlayerRow(pd || {}),
+        submitted: false,
+        auth_user_id: authUserId,
+        onboarding_progress: {
+            ...progress,
+            draftStep: step,
+            draftExtra: { primarySkill: pd?.primarySkill, secondarySkill: pd?.secondarySkill },
+        },
+    };
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/players?on_conflict=id`;
+    try {
+        fetch(url, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey': anonKey,
+                'Prefer': 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([row]),
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ═══ PLAYER-FACING ASSESSMENT LOADER (DNA VIEW) ═══
 // Returns only player-safe fields — NO raw scores, PDI, SAGI, CCM, or domain percentages
 

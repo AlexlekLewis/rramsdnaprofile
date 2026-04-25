@@ -139,6 +139,37 @@ export async function loadResponsesForReflection(reflectionId) {
     return data || [];
 }
 
+// ═══ REFLECTION BEACON FLUSH (mobile-reliable) ═══
+// Fires a keepalive POST so a player's reflection answers survive the tab
+// going to background or being killed on iOS. Upserts on (reflection_id, auth_user_id).
+export function flushReflectionResponseBeacon({ reflectionId, playerId, authUserId, answers }, accessToken, anonKey) {
+    if (!reflectionId || !authUserId || !accessToken || !anonKey) return false;
+    const row = {
+        reflection_id: reflectionId,
+        player_id: playerId || null,
+        auth_user_id: authUserId,
+        answers: answers || [],
+        submitted_at: new Date().toISOString(),
+    };
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/weekly_reflection_responses?on_conflict=reflection_id,auth_user_id`;
+    try {
+        fetch(url, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey': anonKey,
+                'Prefer': 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([row]),
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Helper: basic validation of a questions array before save.
  * Returns { ok: bool, error: string }.
