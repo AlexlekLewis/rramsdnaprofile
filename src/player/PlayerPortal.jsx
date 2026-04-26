@@ -12,6 +12,55 @@ import { computeGrowthStats } from "../db/assessmentDb";
 import { loadPendingReflectionsForPlayer } from "../db/reflectionsDb";
 import { supabase } from "../supabaseClient";
 
+// Parse "Tue 5-7pm" → { dayLong: "Tuesday", dayShort: "Tue", time: "5–7 pm" }
+function parseSession(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const dayMap = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+    const m = raw.trim().match(/^(\w{3,})\s+(.+)$/i);
+    if (!m) return { dayLong: raw, dayShort: raw, time: '' };
+    const dayShort = m[1].slice(0, 3);
+    const dayKey = dayShort[0].toUpperCase() + dayShort.slice(1).toLowerCase();
+    const time = m[2].trim().replace(/-/g, '\u2013');
+    return { dayLong: dayMap[dayKey] || raw, dayShort: dayKey, time };
+}
+
+const SessionsBanner = React.memo(({ weekday, weekend, tentative }) => {
+    if (!weekday && !weekend) return null;
+    const wd = parseSession(weekday);
+    const we = parseSession(weekend);
+    const Cell = ({ label, accent, parsed }) => (
+        <div style={{ flex: 1, padding: '14px 14px 16px', minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: accent, letterSpacing: 1.4, fontFamily: F, textTransform: 'uppercase' }}>{label}</div>
+            {parsed ? (
+                <>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: B.nvD, fontFamily: F, marginTop: 6, lineHeight: 1.1, letterSpacing: -0.3 }}>{parsed.dayLong}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: B.nv, fontFamily: F, marginTop: 4 }}>{parsed.time}</div>
+                </>
+            ) : (
+                <div style={{ fontSize: 13, fontWeight: 700, color: B.g400, fontFamily: F, marginTop: 8 }}>To be confirmed</div>
+            )}
+        </div>
+    );
+    return (
+        <div style={{ background: B.w, borderRadius: 14, marginBottom: 16, border: `2px solid ${B.nvD}`, boxShadow: '0 4px 14px rgba(0, 29, 72, 0.10)', overflow: 'hidden' }}>
+            <div style={{ background: `linear-gradient(90deg, ${B.nvD} 0%, ${B.bl} 70%, ${B.pk} 100%)`, padding: '9px 14px', color: B.w, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, fontFamily: F, letterSpacing: 1.4, textTransform: 'uppercase' }}>🏏 Your Sessions</div>
+                {tentative && (
+                    <div style={{ fontSize: 9, fontWeight: 800, fontFamily: F, letterSpacing: 0.6, background: 'rgba(255,255,255,0.18)', padding: '3px 8px', borderRadius: 10, textTransform: 'uppercase' }}>Tentative</div>
+                )}
+            </div>
+            <div style={{ display: 'flex' }}>
+                <div style={{ flex: 1, background: `linear-gradient(180deg, ${B.bl}10 0%, ${B.w} 80%)`, borderRight: `1px solid ${B.g200}` }}>
+                    <Cell label="Weekday" accent={B.bl} parsed={wd} />
+                </div>
+                <div style={{ flex: 1, background: `linear-gradient(180deg, ${B.pk}12 0%, ${B.w} 80%)` }}>
+                    <Cell label="Weekend" accent={B.pk} parsed={we} />
+                </div>
+            </div>
+        </div>
+    );
+});
+
 const PortalHeader = React.memo(({ title, showBack, onBack, onSignOut, userName }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: B.nvD }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -39,6 +88,7 @@ export default function PlayerPortal() {
     const [programInfo, setProgramInfo] = useState(null);
     const [growthStats, setGrowthStats] = useState(null);
     const [pendingReflections, setPendingReflections] = useState(0);
+    const [schedule, setSchedule] = useState(null);
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -48,7 +98,7 @@ export default function PlayerPortal() {
                 // Look up the player's players.id from auth_user_id
                 const { data: playerRow } = await supabase
                     .from('players')
-                    .select('id')
+                    .select('id, weekday_session, weekend_session, schedule_tentative')
                     .eq('auth_user_id', session.user.id)
                     .eq('submitted', true)
                     .order('created_at', { ascending: false })
@@ -56,6 +106,11 @@ export default function PlayerPortal() {
                     .maybeSingle();
                 if (cancelled || !playerRow) return;
                 setPlayerId(playerRow.id);
+                setSchedule({
+                    weekday: playerRow.weekday_session,
+                    weekend: playerRow.weekend_session,
+                    tentative: !!playerRow.schedule_tentative,
+                });
                 const att = await loadAttendanceForPlayer(playerRow.id);
                 if (!cancelled) setRecentAtt(att.slice(0, 5));
             } catch (err) {
@@ -140,6 +195,9 @@ export default function PlayerPortal() {
             <PortalHeader title="Player Portal" onSignOut={handleSignOut} userName={userProfile?.full_name} />
 
             <div style={{ padding: 16, ...getDkWrap() }}>
+
+                {/* ═══ MY SESSIONS — pinned to the very top so day/time is the first thing every player sees ═══ */}
+                <SessionsBanner weekday={schedule?.weekday} weekend={schedule?.weekend} tentative={schedule?.tentative} />
 
                 {/* ═══ WELCOME BANNER ═══ */}
                 <div style={{ background: `linear-gradient(135deg, ${B.nvD}, ${B.bl})`, borderRadius: 16, padding: 24, marginBottom: 20, color: B.w, position: 'relative', overflow: 'hidden' }}>
