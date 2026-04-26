@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { loadGoalsForPlayer, addGoal, updateGoalProgress, updateGoal, completeGoal, loadFocusAreas, loadNotes, addNote } from "../db/idpDb";
 import { loadCoachAssessment, loadSelfRatings, buildAssessmentSummary } from "../db/assessmentDb";
 import { B, F, sCard } from "../data/theme";
+import PerformanceMetrics from "../shared/PerformanceMetrics";
 
 const GOAL_CATEGORIES = [
     { id: 'technical', label: 'Technical', color: B.pk },
@@ -233,6 +234,13 @@ export default function IDPView({ session, userProfile, playerId }) {
                     {feedback.text}
                 </div>
             )}
+
+            {/* ═══ PERFORMANCE METRICS (top-line numbers) ═══ */}
+            <PerformanceMetrics
+                playerId={playerId}
+                editorRole="player"
+                editorUserId={session?.user?.id}
+            />
 
             {/* ═══ ASSESSMENT OVERVIEW (SAGI) ═══ */}
             {assessmentLoaded && assessmentSummary.some(d => d.coachAvg != null || d.selfAvg != null) && (
