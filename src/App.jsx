@@ -126,7 +126,10 @@ function MainApp() {
   };
 
   // ═══ LOADING / SPLASH ═══
-  if (authLoading || (portal && engineLoading)) return (
+  // Also treat "we have a fallback profile but no submitted hint" as still loading —
+  // otherwise returning players on slow networks get briefly pushed to onboarding.
+  const fallbackWithoutSubmittedHint = userProfile?._fallback && !userProfile?._hasSubmittedHint && userProfile?.role === 'player';
+  if (authLoading || (portal && engineLoading) || fallbackWithoutSubmittedHint) return (
     <div style={{ minHeight: "100vh", ...sGrad, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <img src={LOGO} alt="" style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.3))" }} />
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontFamily: F, fontWeight: 600 }}>Loading...</div>
