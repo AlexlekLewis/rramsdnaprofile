@@ -5,6 +5,8 @@ import Journal from "./Journal";
 import IDPView from "./IDPView";
 import PlayerDNA from "./PlayerDNA";
 import WeeklyReflection from "./WeeklyReflection";
+import HeadshotUpload from "./HeadshotUpload";
+import HeadshotAvatar from "../shared/HeadshotAvatar";
 import { loadAttendanceForPlayer } from "../db/observationDb";
 import { loadJournalHistory } from "../db/journalDb";
 import { loadGoalsForPlayer } from "../db/idpDb";
@@ -89,6 +91,7 @@ export default function PlayerPortal() {
     const [growthStats, setGrowthStats] = useState(null);
     const [pendingReflections, setPendingReflections] = useState(0);
     const [schedule, setSchedule] = useState(null);
+    const [headshotUrl, setHeadshotUrl] = useState(null);
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -98,7 +101,7 @@ export default function PlayerPortal() {
                 // Look up the player's players.id from auth_user_id
                 const { data: playerRow } = await supabase
                     .from('players')
-                    .select('id, weekday_session, weekend_session, schedule_tentative')
+                    .select('id, weekday_session, weekend_session, schedule_tentative, headshot_url')
                     .eq('auth_user_id', session.user.id)
                     .eq('submitted', true)
                     .order('created_at', { ascending: false })
@@ -111,6 +114,7 @@ export default function PlayerPortal() {
                     weekend: playerRow.weekend_session,
                     tentative: !!playerRow.schedule_tentative,
                 });
+                setHeadshotUrl(playerRow.headshot_url || null);
                 const att = await loadAttendanceForPlayer(playerRow.id);
                 if (!cancelled) setRecentAtt(att.slice(0, 5));
             } catch (err) {
@@ -180,6 +184,19 @@ export default function PlayerPortal() {
         </div>
     );
 
+    if (view === "photo") return (
+        <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
+            <PortalHeader title="Profile Photo" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <HeadshotUpload
+                playerId={playerId}
+                playerName={userProfile?.full_name}
+                currentUrl={headshotUrl}
+                onSaved={(url) => setHeadshotUrl(url)}
+                onClose={() => setView('home')}
+            />
+        </div>
+    );
+
     // ── Stat card helper ──
     const StatCard = ({ value, label, color, icon }) => (
         <div style={{ ...sCard, flex: 1, padding: 14, marginBottom: 0, textAlign: 'center', minWidth: 0 }}>
@@ -201,10 +218,17 @@ export default function PlayerPortal() {
 
                 {/* ═══ WELCOME BANNER ═══ */}
                 <div style={{ background: `linear-gradient(135deg, ${B.nvD}, ${B.bl})`, borderRadius: 16, padding: 24, marginBottom: 20, color: B.w, position: 'relative', overflow: 'hidden' }}>
-                    <div style={{ position: 'relative', zIndex: 2 }}>
+                    <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                        <div style={{ cursor: 'pointer', flexShrink: 0 }} onClick={() => setView('photo')} title={headshotUrl ? 'Tap to update your photo' : 'Tap to add your photo'}>
+                            <HeadshotAvatar url={headshotUrl} name={userProfile?.full_name} size={64} ringColor="rgba(255,255,255,0.6)" />
+                            {!headshotUrl && (
+                                <div style={{ fontSize: 8, fontWeight: 800, color: B.pk, background: B.w, padding: '2px 6px', borderRadius: 8, marginTop: 4, textAlign: 'center', letterSpacing: 0.5, textTransform: 'uppercase' }}>Add photo</div>
+                            )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 4, fontFamily: F }}>Welcome back,</div>
                         <div style={{ fontSize: 24, fontWeight: 800, fontFamily: F, marginBottom: 12 }}>{userProfile?.full_name?.split(' ')[0] || 'Player'}</div>
-                        <div style={{ display: 'flex', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                             <div style={{ background: "rgba(255,255,255,0.1)", padding: '6px 12px', borderRadius: 8, backdropFilter: 'blur(10px)' }}>
                                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontFamily: F }}>PROGRAM</div>
                                 <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>{programInfo?.programName || 'RRAM Academy'}</div>
@@ -219,6 +243,7 @@ export default function PlayerPortal() {
                                     <div style={{ fontSize: 11, fontWeight: 700, fontFamily: F }}>🔥 {growthStats.streak} week{growthStats.streak !== 1 ? 's' : ''}</div>
                                 </div>
                             )}
+                        </div>
                         </div>
                     </div>
                 </div>
