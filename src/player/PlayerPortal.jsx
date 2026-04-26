@@ -6,6 +6,7 @@ import IDPView from "./IDPView";
 import PlayerDNA from "./PlayerDNA";
 import WeeklyReflection from "./WeeklyReflection";
 import HeadshotUpload from "./HeadshotUpload";
+import HeadshotPrompt from "./HeadshotPrompt";
 import HeadshotAvatar from "../shared/HeadshotAvatar";
 import { loadAttendanceForPlayer } from "../db/observationDb";
 import { loadJournalHistory } from "../db/journalDb";
@@ -92,6 +93,12 @@ export default function PlayerPortal() {
     const [pendingReflections, setPendingReflections] = useState(0);
     const [schedule, setSchedule] = useState(null);
     const [headshotUrl, setHeadshotUrl] = useState(null);
+    // Per-session "Later" dismissal so the prompt doesn't nag mid-session,
+    // but still nudges the player on next login until they upload.
+    const [promptDismissed, setPromptDismissed] = useState(() => {
+        try { return sessionStorage.getItem('rra_headshot_prompt_dismissed') === '1'; }
+        catch { return false; }
+    });
 
     useEffect(() => {
         if (!session?.user?.id) return;
@@ -207,9 +214,27 @@ export default function PlayerPortal() {
     );
 
     // HOME VIEW
+    // Headshot prompt — only renders when:
+    //  1. The player has loaded (playerId set), AND
+    //  2. They have no headshot saved yet (headshotUrl is null), AND
+    //  3. They haven't dismissed it for this session
+    // As soon as a successful upload sets headshotUrl to a real URL, this stops rendering for good.
+    const showHeadshotPrompt = !!playerId && !headshotUrl && !promptDismissed;
+    const handlePromptUpload = () => {
+        setPromptDismissed(true);
+        try { sessionStorage.setItem('rra_headshot_prompt_dismissed', '1'); } catch {}
+        setView('photo');
+    };
+    const handlePromptLater = () => {
+        setPromptDismissed(true);
+        try { sessionStorage.setItem('rra_headshot_prompt_dismissed', '1'); } catch {}
+    };
+
     return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
             <PortalHeader title="Player Portal" onSignOut={handleSignOut} userName={userProfile?.full_name} />
+
+            <HeadshotPrompt open={showHeadshotPrompt} onUpload={handlePromptUpload} onLater={handlePromptLater} />
 
             <div style={{ padding: 16, ...getDkWrap() }}>
 
