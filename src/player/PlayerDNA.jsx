@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { loadPlayerDNAData } from "../db/playerDb";
 import { BAT_ARCH, BWL_ARCH, scoreBatArchetype, scoreBwlArchetype } from "../data/skillItems";
 import { B, F, sCard } from "../data/theme";
+import MultiRaterIDPSection from "./MultiRaterIDPSection";
 
 const ReportCard = lazy(() => import("../coach/ReportCard"));
 
@@ -101,6 +102,9 @@ export default function PlayerDNA() {
 
     return (
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* ═══ MULTI-RATER COACH SCORES (renders nothing if no aggregated scores yet) ═══ */}
+            <MultiRaterIDPSection playerId={player.id} />
 
             {/* ═══ T20 ARCHETYPE IDENTITY ═══ */}
             <div style={{ ...sCard, padding: 20 }}>

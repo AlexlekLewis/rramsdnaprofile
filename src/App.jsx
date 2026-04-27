@@ -10,7 +10,7 @@ import { ErrorBoundary } from "./shared/ErrorBoundary";
 // ═══ LAZY-LOADED PORTAL COMPONENTS ═══
 const PlayerOnboarding = React.lazy(() => import("./player/PlayerOnboarding"));
 const PlayerPortal = React.lazy(() => import("./player/PlayerPortal"));
-const CoachAssessment = React.lazy(() => import("./coach/CoachAssessment"));
+const CoachAssessment = React.lazy(() => import("./coach/CoachPortalRoot"));
 
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad } from "./data/theme";
