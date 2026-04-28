@@ -11,6 +11,19 @@ import { ErrorBoundary } from "./shared/ErrorBoundary";
 const PlayerOnboarding = React.lazy(() => import("./player/PlayerOnboarding"));
 const PlayerPortal = React.lazy(() => import("./player/PlayerPortal"));
 const CoachAssessment = React.lazy(() => import("./coach/CoachAssessment"));
+const VoiceSpike = React.lazy(() => import("./coach/VoiceSpike"));
+
+// Voice-mode prototype (admin only) — accessible via ?voicespike=1
+function isVoiceSpikeRequested() {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("voicespike") === "1";
+}
+function exitVoiceSpike() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("voicespike");
+  window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+}
 
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad } from "./data/theme";
@@ -335,6 +348,11 @@ function MainApp() {
       )}
     </div>
   );
+
+  // ═══ VOICE-MODE SPIKE (admin-only, ?voicespike=1) ═══
+  if (isVoiceSpikeRequested() && isAdmin) {
+    return <VoiceSpike onClose={() => { exitVoiceSpike(); window.location.reload(); }} />;
+  }
 
   // ═══ PLAYER PORTAL ═══
   if (portal === "player") {
