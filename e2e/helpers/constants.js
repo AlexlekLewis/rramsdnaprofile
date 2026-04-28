@@ -36,7 +36,7 @@ export const SEL = {
   signInButton: 'button:has-text("SIGN IN")',
   registerLink: 'text=New here? Register with your code',
   loginInstructionsLink: 'text=Login Instructions',
-  forgotPasswordText: 'text=Forgot your password?',
+  forgotPasswordText: 'text=/Forgot (your )?password\\?/',
 
   // Registration form
   regCodeInput: 'input[placeholder="Registration Code"]',

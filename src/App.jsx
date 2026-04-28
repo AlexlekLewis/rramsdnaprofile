@@ -15,6 +15,34 @@ const CoachAssessment = React.lazy(() => import("./coach/CoachAssessment"));
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad } from "./data/theme";
 
+// ═══ PASSWORD RECOVERY (feature-flagged) ═══
+const RECOVERY_ENABLED = import.meta.env.VITE_ENABLE_PASSWORD_RECOVERY === "true";
+import {
+  ForgotPasswordModal,
+  ForgotUsernameModal,
+  ResetPasswordPage,
+  VerifyRecoveryEmailPage,
+  RecoveryEmailPrompt,
+} from "./auth/passwordRecovery";
+
+function readRecoveryUrlToken() {
+  if (typeof window === "undefined") return { type: null, token: null };
+  const params = new URLSearchParams(window.location.search);
+  const reset = params.get("reset_token");
+  if (reset) return { type: "reset", token: reset };
+  const verify = params.get("verify_recovery_token");
+  if (verify) return { type: "verify_recovery", token: verify };
+  return { type: null, token: null };
+}
+
+function clearRecoveryUrlToken() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("reset_token");
+  url.searchParams.delete("verify_recovery_token");
+  window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+}
+
 const EyeToggle = React.memo(({ show, onToggle }) => (
     <button type="button" onClick={onToggle} aria-label={show ? 'Hide password' : 'Show password'}
       style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center' }}>
@@ -34,6 +62,15 @@ function MainApp() {
   const [loginPassword, setLoginPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [showLoginPw, setShowLoginPw] = useState(false);
+
+  // ═══ PASSWORD RECOVERY ═══
+  const [recoveryUrl, setRecoveryUrl] = useState(() => RECOVERY_ENABLED ? readRecoveryUrlToken() : { type: null, token: null });
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [showForgotUsernameModal, setShowForgotUsernameModal] = useState(false);
+  const dismissRecoveryUrl = () => {
+    clearRecoveryUrlToken();
+    setRecoveryUrl({ type: null, token: null });
+  };
 
   // ═══ REGISTRATION STATE ═══
   const [showRegister, setShowRegister] = useState(!!joinRole);
@@ -124,6 +161,15 @@ function MainApp() {
     setAuthError('');
     setAuthStep('login');
   };
+
+  // ═══ DEEP-LINK PAGES (password recovery) ═══
+  // These take precedence over auth state — a reset link should work even if user is somehow signed in.
+  if (RECOVERY_ENABLED && recoveryUrl.type === "reset") {
+    return <ResetPasswordPage token={recoveryUrl.token} onDone={dismissRecoveryUrl} />;
+  }
+  if (RECOVERY_ENABLED && recoveryUrl.type === "verify_recovery") {
+    return <VerifyRecoveryEmailPage token={recoveryUrl.token} onDone={dismissRecoveryUrl} />;
+  }
 
   // ═══ LOADING / SPLASH ═══
   // Also treat "we have a fallback profile but no submitted hint" as still loading —
@@ -243,9 +289,22 @@ function MainApp() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
             SIGN IN
           </button>
-          <div style={{ textAlign: 'center', marginTop: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: F, lineHeight: 1.5 }}>
-            Forgot your password? Contact your RRAM coordinator.
-          </div>
+          {RECOVERY_ENABLED ? (
+            <div style={{ textAlign: 'center', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button type="button" onClick={() => setShowForgotPasswordModal(true)}
+                style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: F, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                Forgot password?
+              </button>
+              <button type="button" onClick={() => setShowForgotUsernameModal(true)}
+                style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: F, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                Forgot username?
+              </button>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', marginTop: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: F, lineHeight: 1.5 }}>
+              Forgot your password? Contact your RRAM coordinator.
+            </div>
+          )}
           <div style={{ textAlign: 'center', marginTop: 8 }}>
             <a href="/login-instructions.html" target="_blank" rel="noopener noreferrer"
               style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: F, textDecoration: 'underline', cursor: 'pointer' }}>
@@ -266,18 +325,35 @@ function MainApp() {
         <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", fontFamily: F, fontWeight: 600 }}>Signing in...</div>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: F, marginTop: 6 }}>Please wait.</div>
       </>}
+
+      {/* ── PASSWORD RECOVERY MODALS ── */}
+      {RECOVERY_ENABLED && showForgotPasswordModal && (
+        <ForgotPasswordModal onClose={() => setShowForgotPasswordModal(false)} />
+      )}
+      {RECOVERY_ENABLED && showForgotUsernameModal && (
+        <ForgotUsernameModal onClose={() => setShowForgotUsernameModal(false)} />
+      )}
     </div>
   );
 
   // ═══ PLAYER PORTAL ═══
   if (portal === "player") {
-    if (userProfile?.submitted) return <PlayerPortal />;
-    return <PlayerOnboarding />;
+    return (
+      <>
+        {RECOVERY_ENABLED && <RecoveryEmailPrompt />}
+        {userProfile?.submitted ? <PlayerPortal /> : <PlayerOnboarding />}
+      </>
+    );
   }
 
   // ═══ COACH / ADMIN PORTAL ═══
   if (["coach", "admin", "super_admin"].includes(portal)) {
-    return <CoachAssessment />;
+    return (
+      <>
+        {RECOVERY_ENABLED && <RecoveryEmailPrompt />}
+        <CoachAssessment />
+      </>
+    );
   }
 
   return null;
