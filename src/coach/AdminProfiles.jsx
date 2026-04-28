@@ -5,6 +5,7 @@ import { ROLES } from "../data/skillItems";
 import { supabase } from "../supabaseClient";
 import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortPlayer, updateCohortPlayer } from "../db/adminDb";
 import { getAge } from "../engine/ratingEngine";
+import HeadshotAvatar from "../shared/HeadshotAvatar";
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
@@ -134,6 +135,7 @@ export default function AdminProfiles() {
                     isArchived: false, source_table: 'players',
                     username: member?.username || null,
                     signupDate: member?.created_at || p.created_at,
+                    headshot_url: p.headshot_url || null,
                 };
             };
 
@@ -291,6 +293,7 @@ export default function AdminProfiles() {
                         <div key={p.id} style={{ ...sCard, padding: 0, marginBottom: 0 }}>
                             {/* Header row */}
                             <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <HeadshotAvatar url={p.headshot_url} name={p.name} size={36} />
                                 <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <span style={{ fontSize: 14 }} title={p.hasDNA ? 'DNA Complete' : 'In Progress'}>{p.hasDNA ? '✅' : '🔄'}</span>

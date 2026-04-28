@@ -23,6 +23,7 @@ import { COACH_DEFS } from "../data/skillDefinitions";
 // ═══ SHARED UI ═══
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring, InfoTooltip } from "../shared/FormComponents";
 import { SaveToast, SaveStatusBar, useSaveStatus } from "../shared/SaveToast";
+import HeadshotAvatar from "../shared/HeadshotAvatar";
 
 // ═══ LAZY-LOADED COMPONENTS ═══
 const ReportCard = React.lazy(() => import("./ReportCard"));
@@ -529,11 +530,8 @@ export default function CoachAssessment() {
                 const renderCard = (p) => {
                     const { ccmR, dn, hasCd, hasSelf, hasData, overallScore } = rosterScores[p.id] || {};
                     const a = getAge(p.dob), br = getBracket(p.dob), ro = ROLES.find(r => r.id === p.role);
-                    const ini = p.name ? p.name.split(" ").map(w => w[0]).join("").slice(0, 2) : "?";
                     return (<div key={p.id} style={{ ...sCard, cursor: "pointer", display: "flex", gap: 10 }} onClick={() => { setSelP(p.id); setCView("survey"); goTop(); }}>
-                        <div style={{ width: 40, height: 40, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <span style={{ color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F }}>{ini}</span>
-                        </div>
+                        <HeadshotAvatar url={p.headshot_url} name={p.name} size={40} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F }}>{p.name}</div>
@@ -1136,7 +1134,6 @@ export default function CoachAssessment() {
         };
 
         const ro = ROLES.find(r => r.id === sp.role);
-        const ini = sp.name ? sp.name.split(" ").map(w => w[0]).join("").slice(0, 2) : "?";
 
         return (<div style={{ minHeight: "100vh", fontFamily: F, background: B.g50 }}>
             <Hdr label="COACH PORTAL" onLogoClick={signOut} />
@@ -1152,9 +1149,7 @@ export default function CoachAssessment() {
                     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: B.w, borderBottom: `1px solid ${B.g200}` }}>
                         <button disabled={!prevP} onClick={() => { if (prevP) { setSelP(prevP.id); setCPage(0); goTop(); } }}
                             style={{ width: 28, height: 28, borderRadius: '50%', border: `1px solid ${prevP ? B.g200 : 'transparent'}`, background: 'transparent', color: prevP ? B.g600 : B.g200, fontSize: 14, cursor: prevP ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>←</button>
-                        <div style={{ width: 30, height: 30, borderRadius: "50%", ...sGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <span style={{ color: B.w, fontSize: 11, fontWeight: 800, fontFamily: F }}>{ini}</span>
-                        </div>
+                        <HeadshotAvatar url={sp.headshot_url} name={sp.name} size={30} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F }}>{sp.name}</div>
                             <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{ro?.label} • {sp.club} • {currentIdx + 1}/{submitted.length}</div>
