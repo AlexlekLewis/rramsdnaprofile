@@ -12,7 +12,6 @@ import { loadAttendanceForPlayer } from "../db/observationDb";
 import { loadJournalHistory } from "../db/journalDb";
 import { loadGoalsForPlayer } from "../db/idpDb";
 import { computeGrowthStats } from "../db/assessmentDb";
-import { loadPendingReflectionsForPlayer } from "../db/reflectionsDb";
 import { supabase } from "../supabaseClient";
 
 // Parse "Tue 5-7pm" → { dayLong: "Tuesday", dayShort: "Tue", time: "5–7 pm" }
@@ -90,7 +89,6 @@ export default function PlayerPortal() {
     const [playerId, setPlayerId] = useState(null);
     const [programInfo, setProgramInfo] = useState(null);
     const [growthStats, setGrowthStats] = useState(null);
-    const [pendingReflections, setPendingReflections] = useState(0);
     const [schedule, setSchedule] = useState(null);
     const [headshotUrl, setHeadshotUrl] = useState(null);
     // Per-session "Later" dismissal so the prompt doesn't nag mid-session,
@@ -144,11 +142,6 @@ export default function PlayerPortal() {
                 const { data: program } = await supabase.from('programs').select('name, season').order('created_at', { ascending: false }).limit(1).maybeSingle();
                 if (!cancelled && (member || program)) setProgramInfo({ programName: program?.name || null, season: member?.season || program?.season || null });
             } catch (e) { console.warn('Program info fetch failed:', e.message); }
-            // Pending weekly reflections (badge on tile)
-            try {
-                const pending = await loadPendingReflectionsForPlayer(session.user.id);
-                if (!cancelled) setPendingReflections((pending || []).length);
-            } catch (e) { console.warn('Pending reflections fetch failed:', e.message); }
         }
         fetchData();
         return () => { cancelled = true; };
@@ -186,7 +179,7 @@ export default function PlayerPortal() {
 
     if (view === "reflection") return (
         <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
-            <PortalHeader title="Weekly Reflection" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <PortalHeader title="Weekly Review" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
             <WeeklyReflection session={session} userProfile={userProfile} playerId={playerId} />
         </div>
     );
@@ -316,17 +309,10 @@ export default function PlayerPortal() {
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>My DNA</div>
                         <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Your T20 identity</div>
                     </div>
-                    <div onClick={() => setView('reflection')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s', position: 'relative', border: pendingReflections > 0 ? `2px solid ${B.bl}` : sCard.border, background: pendingReflections > 0 ? `linear-gradient(135deg, ${B.bl}08, ${B.pk}08)` : sCard.background }}>
-                        {pendingReflections > 0 && (
-                            <div style={{ position: 'absolute', top: 8, right: 8, background: B.pk, color: B.w, fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, fontFamily: F }}>
-                                {pendingReflections} NEW
-                            </div>
-                        )}
-                        <div style={{ fontSize: 32, marginBottom: 12 }}>💭</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Weekly Reflection</div>
-                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>
-                            {pendingReflections > 0 ? 'Your coach posted questions' : '3 quick questions each week'}
-                        </div>
+                    <div onClick={() => setView('reflection')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F }}>Weekly Review</div>
+                        <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>End of week reflection</div>
                     </div>
                     <div onClick={() => setView('journal')} style={{ ...sCard, cursor: 'pointer', padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s' }}>
                         <div style={{ fontSize: 32, marginBottom: 12 }}>📔</div>
