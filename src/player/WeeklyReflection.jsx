@@ -11,6 +11,8 @@ import {
     submitResponse,
     updateResponse,
     loadResponseHistory,
+    groupQuestionsByCategory,
+    questionType,
 } from '../db/weeklyReflectionDb';
 import { supabase } from '../supabaseClient';
 
@@ -21,19 +23,6 @@ const CATEGORY_COLOR = {
     'Fielding': B.grn,
 };
 const colorForCategory = (cat) => CATEGORY_COLOR[cat] || B.nvD;
-
-// Group a flat questions array into [{ category, questions: [...] }]
-// preserving the order categories first appear.
-function groupByCategory(questions) {
-    const order = [];
-    const groups = {};
-    (questions || []).forEach(q => {
-        const cat = q.category || 'Other';
-        if (!groups[cat]) { groups[cat] = []; order.push(cat); }
-        groups[cat].push(q);
-    });
-    return order.map(cat => ({ category: cat, questions: groups[cat] }));
-}
 
 export default function WeeklyReflection({ session, userProfile, playerId: playerIdProp }) {
     const authUserId = session?.user?.id;
@@ -167,29 +156,72 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
         );
     };
 
-    // ── Question card (read or edit) ──
-    const QuestionCard = ({ q, idx, value, readOnly, onChange }) => (
-        <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 8, lineHeight: 1.4 }}>
-                {idx + 1}. {q.question}
-            </div>
-            {readOnly ? (
-                <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                    {value && value.trim()
-                        ? value
-                        : <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>}
+    // ── Question card (read or edit, text or multiple choice) ──
+    const QuestionCard = ({ q, idx, value, readOnly, onChange }) => {
+        const t = questionType(q);
+        const accent = colorForCategory(q.category);
+        return (
+            <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 8, lineHeight: 1.4 }}>
+                    {idx + 1}. {q.question}
                 </div>
-            ) : (
-                <textarea
-                    value={value || ''}
-                    onChange={e => onChange(q.id, e.target.value)}
-                    placeholder="Write your reflection…"
-                    rows={4}
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 13, fontFamily: F, background: B.g50, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
-                />
-            )}
-        </div>
-    );
+
+                {/* Multiple choice */}
+                {t === 'choice' && (
+                    readOnly ? (
+                        <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F }}>
+                            {(() => {
+                                const chosen = (q.options || []).find(o => o.id === value);
+                                if (!chosen) return <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>;
+                                return <span style={{ fontWeight: 700, color: accent }}>{chosen.label}</span>;
+                            })()}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {(q.options || []).map(opt => {
+                                const selected = value === opt.id;
+                                return (
+                                    <button key={opt.id} type="button" onClick={() => onChange(q.id, opt.id)}
+                                        style={{
+                                            textAlign: 'left', padding: '12px 14px', borderRadius: 10,
+                                            border: `2px solid ${selected ? accent : B.g200}`,
+                                            background: selected ? `${accent}10` : B.w,
+                                            color: selected ? accent : B.g700,
+                                            fontSize: 13, fontFamily: F, fontWeight: selected ? 700 : 500,
+                                            cursor: 'pointer', transition: 'all 0.15s',
+                                        }}>
+                                        <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? accent : B.g400}`, background: selected ? accent : 'transparent', marginRight: 10, verticalAlign: 'middle', position: 'relative', boxSizing: 'border-box' }}>
+                                            {selected && <span style={{ position: 'absolute', top: 3, left: 3, width: 8, height: 8, borderRadius: '50%', background: B.w }} />}
+                                        </span>
+                                        {opt.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )
+                )}
+
+                {/* Text */}
+                {t === 'text' && (
+                    readOnly ? (
+                        <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                            {value && String(value).trim()
+                                ? value
+                                : <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>}
+                        </div>
+                    ) : (
+                        <textarea
+                            value={value || ''}
+                            onChange={e => onChange(q.id, e.target.value)}
+                            placeholder="Write your reflection…"
+                            rows={4}
+                            style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 13, fontFamily: F, background: B.g50, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
+                        />
+                    )
+                )}
+            </div>
+        );
+    };
 
     // ── This Week — three states: empty / submit / submitted ──
     const renderCurrentTab = () => {
@@ -205,7 +237,7 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
             );
         }
 
-        const grouped = groupByCategory(currentReflection.questions);
+        const grouped = groupQuestionsByCategory(currentReflection.questions);
         const submitted = !!existingResponse && !editing;
 
         // Header band common to all states
@@ -295,7 +327,7 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
                 {pastResponses.map(h => {
                     const r = h.reflection;
                     if (!r) return null;
-                    const grouped = groupByCategory(r.questions);
+                    const grouped = groupQuestionsByCategory(r.questions);
                     const ansObj = (h.answers && typeof h.answers === 'object') ? h.answers : {};
                     return (
                         <details key={h.id} style={{ ...sCard, padding: 14, marginBottom: 0 }}>
