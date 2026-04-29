@@ -3,10 +3,11 @@
 // category (Short Ball / Sweeps / Fielding), write text answers, and can
 // edit their submission later. Past weeks live in a separate tab.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { B, F, sCard } from '../data/theme';
 import {
     loadCurrentReflection,
+    loadAllPublishedReflections,
     loadPlayerResponse,
     submitResponse,
     updateResponse,
@@ -31,10 +32,14 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
     const [currentReflection, setCurrentReflection] = useState(null);
     const [existingResponse, setExistingResponse] = useState(null);
     const [history, setHistory] = useState([]);
+    const [publishedReflections, setPublishedReflections] = useState([]);
     const [answers, setAnswers] = useState({});
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState(null);
+    // Catch-up: when set, the player is answering a missed past reflection.
+    // Shape: { reflection, existingResponse, answers }
+    const [catchUp, setCatchUp] = useState(null);
     // Resolve players.id from auth_user_id if PlayerPortal didn't pass one.
     const [playerId, setPlayerId] = useState(playerIdProp || null);
 
@@ -65,18 +70,35 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
         try {
             const reflection = await loadCurrentReflection();
             setCurrentReflection(reflection);
-            const [resp, hist] = await Promise.all([
+            const [resp, hist, allPub] = await Promise.all([
                 reflection ? loadPlayerResponse(reflection.id, authUserId) : Promise.resolve(null),
                 loadResponseHistory(authUserId),
+                loadAllPublishedReflections(),
             ]);
             setExistingResponse(resp);
             setHistory(hist);
+            setPublishedReflections(allPub);
             // Pre-fill form if editing existing
             if (resp?.answers && typeof resp.answers === 'object') setAnswers(resp.answers);
             else setAnswers({});
         } catch (e) { console.error('Weekly reflection load error:', e); }
         setLoading(false);
     };
+
+    // ── Derived: which past published weeks the player still hasn't answered ──
+    // ALL hooks must be declared before any early return below (Rules of Hooks).
+    const answeredIds = useMemo(() => new Set(history.map(h => h.reflection_id)), [history]);
+    const pastPublishedReflections = useMemo(() => {
+        return publishedReflections.filter(r => !currentReflection || r.id !== currentReflection.id);
+    }, [publishedReflections, currentReflection]);
+    const unansweredCount = useMemo(() => {
+        return pastPublishedReflections.filter(r => !answeredIds.has(r.id)).length;
+    }, [pastPublishedReflections, answeredIds]);
+    const responseByReflectionId = useMemo(() => {
+        const m = new Map();
+        history.forEach(h => { if (h.reflection_id) m.set(h.reflection_id, h); });
+        return m;
+    }, [history]);
 
     useEffect(() => { refresh(); }, [authUserId]);
 
@@ -127,19 +149,69 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
         setEditing(false);
     };
 
+    // ── Catch-up: answering a past week the player missed ──
+    const startCatchUp = async (reflection) => {
+        // A response could already exist if the player previously answered then
+        // somehow a row remained — fetch defensively so we update instead of
+        // creating a duplicate.
+        let resp = null;
+        try { resp = await loadPlayerResponse(reflection.id, authUserId); } catch {}
+        setCatchUp({
+            reflection,
+            existingResponse: resp,
+            answers: (resp?.answers && typeof resp.answers === 'object') ? { ...resp.answers } : {},
+        });
+    };
+    const cancelCatchUp = () => setCatchUp(null);
+    const updateCatchUpAnswer = (qid, value) => {
+        setCatchUp(c => c ? { ...c, answers: { ...c.answers, [qid]: value } } : c);
+    };
+    const submitCatchUp = async () => {
+        if (!catchUp) return;
+        setSaving(true);
+        try {
+            try { await supabase.auth.refreshSession(); } catch (e) { console.warn('Pre-submit token refresh failed:', e?.message); }
+            if (catchUp.existingResponse) {
+                await updateResponse(catchUp.existingResponse.id, catchUp.answers);
+            } else {
+                await submitResponse(catchUp.reflection.id, playerId, authUserId, catchUp.answers);
+            }
+            showToast('ok', 'Caught up — thanks ✓');
+            setCatchUp(null);
+            await refresh();
+        } catch (e) {
+            const msg = (e?.message || '').toLowerCase();
+            if (msg.includes('auth') || msg.includes('permission') || msg.includes('jwt') || msg.includes('401') || msg.includes('403')) {
+                showToast('err', 'Session expired — please sign out and sign back in, then try again.');
+            } else if (msg.includes('failed to fetch') || msg.includes('network')) {
+                showToast('err', 'Connection lost — your answers are kept safe, try again.');
+            } else {
+                showToast('err', 'Could not submit — your answers are kept safe, try again.');
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (loading) {
         return <div style={{ padding: 24, color: B.g400, fontSize: 12, fontFamily: F, textAlign: 'center' }}>Loading…</div>;
     }
     if (!authUserId) return null;
 
     // ── Tab button ──
-    const TabBtn = ({ id, label }) => (
+    const TabBtn = ({ id, label, badgeCount }) => (
         <button onClick={() => setTab(id)} style={{
             flex: 1, padding: '10px 8px', border: 'none', background: 'transparent',
             borderBottom: tab === id ? `2px solid ${B.bl}` : `2px solid transparent`,
             color: tab === id ? B.bl : B.g400, fontWeight: tab === id ? 800 : 600,
             fontSize: 11, fontFamily: F, cursor: 'pointer', transition: 'all 0.2s',
-        }}>{label}</button>
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}>
+            {label}
+            {badgeCount > 0 && (
+                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: B.amb, color: B.w, lineHeight: 1.4 }}>{badgeCount}</span>
+            )}
+        </button>
     );
 
     // ── Category header ──
@@ -233,6 +305,12 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
                     <div style={{ fontSize: 12, color: B.g400, fontFamily: F, lineHeight: 1.5 }}>
                         Your coach will publish this week's reflection at the end of the week. Come back then to share what you learned.
                     </div>
+                    {unansweredCount > 0 && (
+                        <button onClick={() => setTab('past')}
+                            style={{ marginTop: 14, padding: '10px 16px', borderRadius: 8, border: `1.5px solid ${B.amb}`, background: `${B.amb}10`, color: '#92400e', fontSize: 12, fontWeight: 800, fontFamily: F, cursor: 'pointer' }}>
+                            You have {unansweredCount} past week{unansweredCount > 1 ? 's' : ''} to catch up on →
+                        </button>
+                    )}
                 </div>
             );
         }
@@ -308,58 +386,141 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
     };
 
     // ── Past Weeks ──
-    const pastResponses = history.filter(h => !currentReflection || h.reflection_id !== currentReflection.id);
+    // The list of past published reflections (excluding current week) plus the
+    // history map (responseByReflectionId, declared above with the other hooks)
+    // tells us which ones are answered vs not.
+    const renderCatchUpView = () => {
+        if (!catchUp) return null;
+        const r = catchUp.reflection;
+        const grouped = groupQuestionsByCategory(r.questions);
+        return (
+            <div>
+                <button onClick={cancelCatchUp}
+                    style={{ fontSize: 10, fontWeight: 600, color: B.bl, background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12, padding: 0 }}>← Back to past weeks</button>
+
+                <div style={{ ...sCard, padding: 16, marginBottom: 14, background: `linear-gradient(135deg, ${B.amb}10, ${B.bl}08)`, border: `1px solid ${B.amb}40` }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: B.amb, fontFamily: F, textTransform: 'uppercase', letterSpacing: 1.2 }}>
+                        Catching up — Week {r.week_number}
+                    </div>
+                    {r.week_label && (
+                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F, marginTop: 4 }}>{r.week_label}</div>
+                    )}
+                </div>
+
+                <div style={{ ...sCard, padding: 18 }}>
+                    {grouped.map(({ category, questions }, gi) => (
+                        <div key={category} style={{ marginTop: gi === 0 ? 0 : 6 }}>
+                            <CategoryHeader category={category} />
+                            {questions.map((q, qi) => (
+                                <QuestionCard
+                                    key={q.id}
+                                    q={q}
+                                    idx={qi}
+                                    value={catchUp.answers[q.id] || ''}
+                                    readOnly={false}
+                                    onChange={updateCatchUpAnswer}
+                                />
+                            ))}
+                        </div>
+                    ))}
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                        <button onClick={cancelCatchUp} disabled={saving}
+                            style={{ flex: '0 0 auto', padding: '12px 18px', borderRadius: 8, border: `1px solid ${B.g200}`, background: B.w, color: B.g600, fontSize: 12, fontWeight: 700, fontFamily: F, cursor: 'pointer' }}>
+                            Cancel
+                        </button>
+                        <button onClick={submitCatchUp} disabled={saving}
+                            style={{ flex: 1, padding: '12px 20px', borderRadius: 8, border: 'none', background: saving ? B.g200 : `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 12, fontWeight: 800, fontFamily: F, cursor: saving ? 'default' : 'pointer', letterSpacing: 0.5, opacity: saving ? 0.7 : 1 }}>
+                            {saving ? 'Submitting…' : 'Submit Reflection'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const renderPastTab = () => {
-        if (pastResponses.length === 0) {
+        // If the player is mid catch-up, replace the list with the answer view.
+        if (catchUp) return renderCatchUpView();
+
+        if (pastPublishedReflections.length === 0) {
             return (
                 <div style={{ ...sCard, padding: 28, textAlign: 'center' }}>
                     <div style={{ fontSize: 28, marginBottom: 10 }}>📂</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: B.nvD, fontFamily: F, marginBottom: 6 }}>No past reflections yet</div>
                     <div style={{ fontSize: 11, color: B.g400, fontFamily: F, lineHeight: 1.5 }}>
-                        Once you submit a reflection and a new week starts, you'll see your past entries here.
+                        Once a new week is published, you'll see your past entries here.
                     </div>
                 </div>
             );
         }
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {pastResponses.map(h => {
-                    const r = h.reflection;
-                    if (!r) return null;
-                    const grouped = groupQuestionsByCategory(r.questions);
-                    const ansObj = (h.answers && typeof h.answers === 'object') ? h.answers : {};
+                {pastPublishedReflections.map(r => {
+                    const h = responseByReflectionId.get(r.id);
+                    const answered = !!h;
+                    if (answered) {
+                        // ── Answered: expandable read-only summary (existing pattern) ──
+                        const grouped = groupQuestionsByCategory(r.questions);
+                        const ansObj = (h.answers && typeof h.answers === 'object') ? h.answers : {};
+                        return (
+                            <details key={r.id} style={{ ...sCard, padding: 14, marginBottom: 0 }}>
+                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 800, color: B.bl, fontFamily: F, textTransform: 'uppercase', letterSpacing: 1 }}>Week {r.week_number}</div>
+                                            <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 10, background: `${B.grn}15`, color: B.grn, letterSpacing: 0.4 }}>✓ ANSWERED</span>
+                                        </div>
+                                        {r.week_label && (
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.week_label}</div>
+                                        )}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: B.g400, fontFamily: F, whiteSpace: 'nowrap' }}>
+                                        {new Date(h.submitted_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </div>
+                                </summary>
+                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B.g100}` }}>
+                                    {grouped.map(({ category, questions }) => (
+                                        <div key={category}>
+                                            <CategoryHeader category={category} />
+                                            {questions.map((q, qi) => (
+                                                <QuestionCard
+                                                    key={q.id}
+                                                    q={q}
+                                                    idx={qi}
+                                                    value={ansObj[q.id] || ''}
+                                                    readOnly
+                                                    onChange={() => {}}
+                                                />
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            </details>
+                        );
+                    }
+                    // ── Unanswered: amber accent + Answer this week button ──
                     return (
-                        <details key={h.id} style={{ ...sCard, padding: 14, marginBottom: 0 }}>
-                            <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontSize: 10, fontWeight: 800, color: B.bl, fontFamily: F, textTransform: 'uppercase', letterSpacing: 1 }}>Week {r.week_number}</div>
+                        <div key={r.id} style={{ ...sCard, padding: 14, marginBottom: 0, borderLeft: `3px solid ${B.amb}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div style={{ fontSize: 10, fontWeight: 800, color: B.bl, fontFamily: F, textTransform: 'uppercase', letterSpacing: 1 }}>Week {r.week_number}</div>
+                                        <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 10, background: `${B.amb}18`, color: '#92400e', letterSpacing: 0.4 }}>NOT ANSWERED YET</span>
+                                    </div>
                                     {r.week_label && (
                                         <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD, fontFamily: F, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.week_label}</div>
                                     )}
-                                </div>
-                                <div style={{ fontSize: 10, color: B.g400, fontFamily: F, whiteSpace: 'nowrap' }}>
-                                    {new Date(h.submitted_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                </div>
-                            </summary>
-                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B.g100}` }}>
-                                {grouped.map(({ category, questions }) => (
-                                    <div key={category}>
-                                        <CategoryHeader category={category} />
-                                        {questions.map((q, qi) => (
-                                            <QuestionCard
-                                                key={q.id}
-                                                q={q}
-                                                idx={qi}
-                                                value={ansObj[q.id] || ''}
-                                                readOnly
-                                                onChange={() => {}}
-                                            />
-                                        ))}
+                                    <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 4 }}>
+                                        {(r.questions || []).length} question{(r.questions || []).length !== 1 ? 's' : ''} · about a minute
                                     </div>
-                                ))}
+                                </div>
                             </div>
-                        </details>
+                            <button onClick={() => startCatchUp(r)}
+                                style={{ marginTop: 10, width: '100%', padding: '10px 14px', borderRadius: 8, border: 'none', background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 12, fontWeight: 800, fontFamily: F, cursor: 'pointer', letterSpacing: 0.5 }}>
+                                Answer this week
+                            </button>
+                        </div>
                     );
                 })}
             </div>
@@ -376,7 +537,7 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
 
             <div style={{ display: 'flex', background: B.w, borderBottom: `1px solid ${B.g200}` }}>
                 <TabBtn id="current" label="This Week" />
-                <TabBtn id="past" label="Past Weeks" />
+                <TabBtn id="past" label="Past Weeks" badgeCount={unansweredCount} />
             </div>
 
             <div style={{ padding: 16 }}>

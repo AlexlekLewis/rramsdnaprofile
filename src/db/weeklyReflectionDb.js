@@ -30,6 +30,22 @@ export async function loadCurrentReflection() {
     return data;
 }
 
+/**
+ * All published reflections the player is allowed to see (i.e., already
+ * past their published_at). Used by the player Past Weeks tab to surface
+ * weeks the player hasn't answered yet, alongside ones they have.
+ */
+export async function loadAllPublishedReflections() {
+    const { data, error } = await supabase
+        .from('weekly_reflections')
+        .select('*')
+        .not('published_at', 'is', null)
+        .lte('published_at', new Date().toISOString())
+        .order('week_number', { ascending: false });
+    if (error) { console.error('loadAllPublishedReflections error:', error.message); return []; }
+    return data || [];
+}
+
 export async function loadPlayerResponse(reflectionId, authUserId) {
     if (!reflectionId || !authUserId) return null;
     const { data, error } = await supabase

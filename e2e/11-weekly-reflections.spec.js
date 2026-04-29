@@ -127,9 +127,35 @@ test.describe('11.2 — Player Weekly Review Tile', () => {
     if (await pastTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await pastTab.click();
       await page.waitForTimeout(1500);
-      // Either empty state or at least one details card.
-      const has = await page.locator('text=/No past reflections|Week \\d+/i').count() > 0;
+      // Past Weeks now shows ANY past published week — answered or not.
+      // Empty state, an answered details card, or an unanswered "Answer this week" card all valid.
+      const has = await page.locator('text=/No past reflections|Week \\d+|Answer this week/i').count() > 0;
       expect(has).toBe(true);
+    }
+    expect(assertNoFatalErrors(errors)).toHaveLength(0);
+  });
+
+  test('catch-up flow renders without errors when an unanswered week is present', async ({ page }) => {
+    // This test is defensive: in the dev preview, RLS hides published rows
+    // from the bypass session, so usually no rows render. But if a real player
+    // session ever lands here we want to ensure the "Answer this week" button
+    // opens the catch-up answer view without throwing.
+    const errors = collectConsoleErrors(page);
+    const tile = page.locator('text=/Weekly Review/i').first();
+    await tile.click();
+    await page.waitForTimeout(1500);
+    const pastTab = page.locator('button:has-text("Past Weeks")').first();
+    if (await pastTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await pastTab.click();
+      await page.waitForTimeout(1500);
+      const answerBtn = page.locator('button:has-text("Answer this week")').first();
+      if (await answerBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await answerBtn.click();
+        await page.waitForTimeout(1000);
+        // Should now show the "Catching up — Week N" header and a Submit button.
+        await expect(page.locator('text=/Catching up/i').first()).toBeVisible({ timeout: 3000 });
+        await expect(page.locator('button:has-text("Submit Reflection")').first()).toBeVisible({ timeout: 3000 });
+      }
     }
     expect(assertNoFatalErrors(errors)).toHaveLength(0);
   });
