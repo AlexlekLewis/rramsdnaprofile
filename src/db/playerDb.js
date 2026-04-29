@@ -70,6 +70,7 @@ export async function loadPlayersFromDB() {
             batArchAnswers: p.bat_arch_answers, bwlArchAnswers: p.bwl_arch_answers,
             playerBatArchSecondary: p.bat_arch_secondary, playerBwlArchSecondary: p.bwl_arch_secondary,
             onboardingProgress: p.onboarding_progress, profileVersion: p.profile_version || 1,
+            headshot_url: p.headshot_url || null,
         };
     });
 }
