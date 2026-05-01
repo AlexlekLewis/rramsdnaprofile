@@ -19,6 +19,7 @@ import { MOCK } from "../data/mockPlayers";
 import { COACH_DEFS } from "../data/skillDefinitions";
 // NOTE: sessionGroups.js has been replaced by src/db/sessionDb.js (reads from sp_squads live).
 // Kept as a file for historical reference but no longer imported.
+import PerformanceMetrics from "../shared/PerformanceMetrics";
 
 // ═══ SHARED UI ═══
 import { Hdr, SecH, Inp, TArea, AssGrid, Ring, InfoTooltip } from "../shared/FormComponents";
@@ -761,6 +762,13 @@ export default function CoachAssessment() {
                     <div style={{ fontSize: 10, fontWeight: 600, color: B.g400, fontFamily: F }}>{q}</div>
                     <div style={{ fontSize: 12, color: B.g800, fontFamily: F, marginTop: 1 }}>{sp.voice?.[i] || "—"}</div>
                 </div>))}</div>
+
+                <SecH title="Performance Metrics" />
+                <PerformanceMetrics
+                    playerId={sp.id}
+                    editorRole="coach"
+                    editorUserId={session?.user?.id}
+                />
 
                 <SecH title="Medical & Goals" />
                 <div style={sCard}>
