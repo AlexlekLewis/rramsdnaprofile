@@ -183,6 +183,14 @@ export default function PlayerOnboarding() {
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [stepError, setStepError] = useState('');
+    // Ref on the stepError banner so we can scroll it into view when it appears.
+    // Long pages on mobile bury validation errors below the fold otherwise.
+    const stepErrorRef = useRef(null);
+    useEffect(() => {
+        if (stepError && stepErrorRef.current) {
+            try { stepErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+        }
+    }, [stepError]);
     const [draftId, setDraftId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
@@ -1039,7 +1047,7 @@ export default function PlayerOnboarding() {
         </div>}
 
         <div style={{ padding: 12, paddingBottom: pStep < 7 ? 70 : 12, ...getDkWrap() }}>
-            {stepError && <div style={{ padding: '10px 14px', marginBottom: 8, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: F }}>{stepError}</div>}
+            {stepError && <div ref={stepErrorRef} role="alert" style={{ padding: '10px 14px', marginBottom: 8, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: F }}>{stepError}</div>}
             {pStep > 0 && pStep < 7 && saveStatus !== 'idle' && (
                 <div style={{ position: 'sticky', top: 8, zIndex: 50, marginBottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{ padding: '5px 12px', borderRadius: 999, fontSize: 10, fontWeight: 700, fontFamily: F, letterSpacing: 0.3, boxShadow: '0 2px 6px rgba(0,0,0,0.08)', background: saveStatus === 'saved' ? `${B.grn}` : saveStatus === 'error' ? B.red : B.nvD, color: B.w }}>
@@ -1050,12 +1058,36 @@ export default function PlayerOnboarding() {
             {renderP()}
         </div>
 
-        {pStep < 7 && <div style={{ position: "fixed", bottom: kbOffset, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", paddingBottom: `calc(8px + env(safe-area-inset-bottom, 0px))`, display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 100, transition: 'bottom 0.2s' }}>
-            <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else handleSignOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>
-            <button disabled={saving} onClick={() => saveDraft()} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g300}`, background: saveStatus === 'saved' ? `${B.grn}10` : saveStatus === 'error' ? '#FEE2E2' : 'transparent', fontSize: 11, fontWeight: 600, color: saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g600, cursor: saving ? 'default' : 'pointer', fontFamily: F, transition: 'all 0.2s' }}>
-                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Save Failed' : 'Save Progress'}
-            </button>
-            <button onClick={() => advanceStep(Math.min(pStep + 1, 6))} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: `linear-gradient(135deg,${B.bl},${B.pk})`, fontSize: 11, fontWeight: 700, color: B.w, cursor: "pointer", fontFamily: F }}>Next →</button>
-        </div>}
+        {pStep < 7 && (() => {
+            // Hard-required validation per step. We disable Next ONLY when one of
+            // these specific required fields is missing — the soft-nudge steps
+            // (3 and 4) deliberately allow Next to be tapped to trigger the nudge.
+            const hardBlocked = (() => {
+                if (pStep === 0) return !pd.name?.trim() || !isValidDob(pd.dob);
+                if (pStep === 1) return !(pd.grades && pd.grades[0]?.level);
+                if (pStep === 2) return !pd.role || !pd.primarySkill;
+                return false;
+            })();
+            return (
+                <div style={{ position: "fixed", bottom: kbOffset, left: 0, right: 0, background: B.w, borderTop: `1px solid ${B.g200}`, padding: "8px 12px", paddingBottom: `calc(8px + env(safe-area-inset-bottom, 0px))`, display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 100, transition: 'bottom 0.2s' }}>
+                    <button onClick={() => { if (pStep > 0) { setPStep(s => s - 1); goTop(); } else handleSignOut(); }} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 11, fontWeight: 600, color: B.g600, cursor: "pointer", fontFamily: F }}>← {pStep === 0 ? 'Sign Out' : 'Back'}</button>
+                    <button disabled={saving} onClick={() => saveDraft()} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g300}`, background: saveStatus === 'saved' ? `${B.grn}10` : saveStatus === 'error' ? '#FEE2E2' : 'transparent', fontSize: 11, fontWeight: 600, color: saveStatus === 'saved' ? B.grn : saveStatus === 'error' ? B.red : B.g600, cursor: saving ? 'default' : 'pointer', fontFamily: F, transition: 'all 0.2s' }}>
+                        {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Save Failed' : 'Save Progress'}
+                    </button>
+                    <button
+                        disabled={hardBlocked}
+                        title={hardBlocked ? 'Fill in the required fields above to continue' : undefined}
+                        onClick={() => advanceStep(Math.min(pStep + 1, 6))}
+                        style={{
+                            padding: "8px 14px", borderRadius: 6, border: "none",
+                            background: hardBlocked ? B.g200 : `linear-gradient(135deg,${B.bl},${B.pk})`,
+                            fontSize: 11, fontWeight: 700,
+                            color: hardBlocked ? B.g400 : B.w,
+                            cursor: hardBlocked ? 'not-allowed' : 'pointer',
+                            fontFamily: F, transition: 'background 0.15s, color 0.15s',
+                        }}>Next →</button>
+                </div>
+            );
+        })()}
     </div>);
 }

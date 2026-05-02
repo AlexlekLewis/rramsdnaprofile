@@ -93,6 +93,8 @@ function MainApp() {
   const pwAllValid = regPassword.length > 0 && pwRules.every(r => r.test(regPassword));
 
   const handleLogin = async () => {
+    // Re-entrancy guard: ignore re-clicks while a sign-in is already in flight.
+    if (authStep === 'signing-in') return;
     if (!loginUsername || !loginPassword) {
       setAuthError('Please enter your username and password.');
       return;
@@ -106,6 +108,8 @@ function MainApp() {
   };
 
   const handleRegister = async () => {
+    // Re-entrancy guard: ignore re-clicks while a registration is already in flight.
+    if (authStep === 'registering') return;
     if (!regCode.trim()) {
       setAuthError('Please enter your registration code.');
       return;
@@ -198,29 +202,37 @@ function MainApp() {
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: F, marginTop: 4, marginBottom: 36 }}>Onboarding & Assessment System</div>
 
       {/* ── REGISTRATION FORM ── */}
-      {showRegister && (authStep === 'register' || authStep === 'login') && <>
-        <div style={{ width: "100%", maxWidth: 300 }}>
+      {showRegister && (authStep === 'register' || authStep === 'login') && (
+        <form onSubmit={(e) => { e.preventDefault(); handleRegister(); }} style={{ width: "100%", maxWidth: 300 }} autoComplete="on">
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontFamily: F, marginBottom: 16, lineHeight: 1.4, textAlign: 'center' }}>
             Create your account
           </div>
-          <input type="text" value={regCode} onChange={e => { setRegCode(e.target.value.toUpperCase().replace(/[^A-Z0-9\-]/g, '')); setAuthError(''); }}
+          <input type="text" id="reg-code" name="registration-code" value={regCode}
+            onChange={e => setRegCode(e.target.value.toUpperCase().replace(/[^A-Z0-9\-]/g, ''))}
             placeholder="Registration Code" autoFocus autoCapitalize="characters" autoCorrect="off"
+            autoComplete="off" inputMode="text" aria-label="Registration code"
             style={{ ...inputStyle(authError), textAlign: 'center', letterSpacing: 2, fontWeight: 800, fontSize: 14 }} />
           <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: F, marginTop: -4, marginBottom: 10, textAlign: 'center' }}>
             Enter the code provided by your programme coordinator
           </div>
-          <input type="text" value={regName} onChange={e => { setRegName(e.target.value); setAuthError(''); }}
-            placeholder="Full Name" autoCapitalize="words" style={inputStyle(authError)} />
-          <input type="text" value={regUsername} onChange={e => { setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '')); setAuthError(''); }}
-            placeholder="Username" autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
+          <input type="text" id="reg-name" name="name" value={regName}
+            onChange={e => setRegName(e.target.value)}
+            placeholder="Full Name" autoCapitalize="words" autoComplete="name"
+            aria-label="Full name" style={inputStyle(authError)} />
+          <input type="text" id="reg-username" name="username" value={regUsername}
+            onChange={e => setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
+            placeholder="Username" autoCapitalize="off" autoCorrect="off" autoComplete="username"
+            aria-label="Username" style={inputStyle(authError)} />
           {regUsername.length > 0 && (
             <div style={{ fontSize: 9, color: /^[a-z0-9._]{3,30}$/.test(regUsername) ? '#4ade80' : 'rgba(255,255,255,0.45)', fontFamily: F, marginTop: -4, marginBottom: 6, fontWeight: 600 }}>
               {regUsername.length < 3 ? `${3 - regUsername.length} more character${3 - regUsername.length > 1 ? 's' : ''} needed` : /^[a-z0-9._]{3,30}$/.test(regUsername) ? '✓ Valid username' : 'Letters, numbers, dots, or underscores only'}
             </div>
           )}
           <div style={{ position: 'relative', width: '100%' }}>
-            <input type={showRegPw ? 'text' : 'password'} value={regPassword} onChange={e => { setRegPassword(e.target.value); setAuthError(''); }}
-              placeholder="Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <input type={showRegPw ? 'text' : 'password'} id="reg-password" name="new-password" value={regPassword}
+              onChange={e => setRegPassword(e.target.value)}
+              placeholder="Password" autoComplete="new-password" aria-label="New password"
+              style={{ ...inputStyle(authError), paddingRight: 44 }} />
             <EyeToggle show={showRegPw} onToggle={() => setShowRegPw(v => !v)} />
           </div>
           {regPassword.length > 0 && (
@@ -241,26 +253,28 @@ function MainApp() {
             </div>
           )}
           <div style={{ position: 'relative', width: '100%' }}>
-            <input type={showRegConfirmPw ? 'text' : 'password'} value={regConfirm} onChange={e => { setRegConfirm(e.target.value); setAuthError(''); }}
-              onKeyDown={e => e.key === 'Enter' && handleRegister()}
-              placeholder="Confirm Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <input type={showRegConfirmPw ? 'text' : 'password'} id="reg-confirm" name="new-password-confirm" value={regConfirm}
+              onChange={e => setRegConfirm(e.target.value)}
+              placeholder="Confirm Password" autoComplete="new-password" aria-label="Confirm password"
+              style={{ ...inputStyle(authError), paddingRight: 44 }} />
             <EyeToggle show={showRegConfirmPw} onToggle={() => setShowRegConfirmPw(v => !v)} />
           </div>
-          {authError && <div style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
-          <button onClick={handleRegister}
+          {authError && <div role="alert" style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
+          <button type="submit"
             style={{ width: "100%", marginTop: 4, padding: "14px 20px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: "pointer", letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
             CREATE ACCOUNT
           </button>
           <div style={{ textAlign: 'center', marginTop: 16 }}>
-            <span onClick={switchToLogin}
+            <span onClick={switchToLogin} role="button" tabIndex={0}
+              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && switchToLogin()}
               style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
               Already have an account? Sign in
             </span>
           </div>
-        </div>
-      </>}
+        </form>
+      )}
 
       {/* ── REGISTERING SPINNER ── */}
       {authStep === 'registering' && <>
@@ -269,21 +283,25 @@ function MainApp() {
       </>}
 
       {/* ── LOGIN FORM ── */}
-      {!showRegister && authStep === 'login' && <>
-        <div style={{ width: "100%", maxWidth: 300 }}>
+      {!showRegister && authStep === 'login' && (
+        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ width: "100%", maxWidth: 300 }} autoComplete="on">
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontFamily: F, marginBottom: 16, lineHeight: 1.4, textAlign: 'center' }}>
             Sign in with your credentials
           </div>
-          <input type="text" value={loginUsername} onChange={e => { setLoginUsername(e.target.value); setAuthError(''); }}
-            placeholder="Username" autoFocus autoCapitalize="off" autoCorrect="off" style={inputStyle(authError)} />
+          <input type="text" id="login-username" name="username" value={loginUsername}
+            onChange={e => setLoginUsername(e.target.value)}
+            placeholder="Username" autoFocus autoCapitalize="off" autoCorrect="off"
+            autoComplete="username" aria-label="Username"
+            style={inputStyle(authError)} />
           <div style={{ position: 'relative', width: '100%' }}>
-            <input type={showLoginPw ? 'text' : 'password'} value={loginPassword} onChange={e => { setLoginPassword(e.target.value); setAuthError(''); }}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              placeholder="Password" style={{ ...inputStyle(authError), paddingRight: 44 }} />
+            <input type={showLoginPw ? 'text' : 'password'} id="login-password" name="password" value={loginPassword}
+              onChange={e => setLoginPassword(e.target.value)}
+              placeholder="Password" autoComplete="current-password" aria-label="Password"
+              style={{ ...inputStyle(authError), paddingRight: 44 }} />
             <EyeToggle show={showLoginPw} onToggle={() => setShowLoginPw(v => !v)} />
           </div>
-          {authError && <div style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
-          <button onClick={handleLogin}
+          {authError && <div role="alert" style={{ fontSize: 11, color: B.red, fontFamily: F, marginTop: 2, marginBottom: 4, fontWeight: 600 }}>⚠ {authError}</div>}
+          <button type="submit"
             style={{ width: "100%", marginTop: 4, padding: "14px 20px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${B.bl}, ${B.pk})`, color: B.w, fontSize: 13, fontWeight: 800, fontFamily: F, cursor: "pointer", letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
@@ -312,13 +330,14 @@ function MainApp() {
             </a>
           </div>
           <div style={{ textAlign: 'center', marginTop: 8 }}>
-            <span onClick={() => switchToRegister(null)}
+            <span onClick={() => switchToRegister(null)} role="button" tabIndex={0}
+              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && switchToRegister(null)}
               style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F, cursor: "pointer", textDecoration: "underline" }}>
               New here? Register with your code
             </span>
           </div>
-        </div>
-      </>}
+        </form>
+      )}
 
       {/* ── SIGNING IN SPINNER ── */}
       {!showRegister && authStep === 'signing-in' && <>
