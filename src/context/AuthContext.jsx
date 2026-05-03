@@ -89,28 +89,70 @@ export function AuthProvider({ children }) {
             else if (profile.submitted === false) localStorage.removeItem('rra_user_submitted');
         };
 
+        // Keep the rra_user_role localStorage cache (used by buildFallbackProfile)
+        // in sync with the authoritative DB role. Without this, if an admin
+        // changes a user's role server-side, the local cache stays stale across
+        // sessions until next sign-in — meaning the fallback profile shown
+        // during a slow auth bootstrap could render the OLD role's UI for a
+        // few seconds. RLS still blocks the actual data, but the UI mismatch
+        // is confusing.
+        const persistRole = (profile) => {
+            if (profile?.role) localStorage.setItem('rra_user_role', profile.role);
+        };
+
         const sessionPromise = getSession();
-        // 3s timeout (was 1.5s) — mobile 3G/4G networks often take 2+ seconds for getSession().
-        // If this fires before the real session arrives, user briefly sees login screen.
-        const timeoutPromise = new Promise(r => setTimeout(() => r(null), 3000));
+        // Safety timeout: if Supabase getSession() never resolves (e.g. cold-cached
+        // mobile network with no connectivity), drop the splash so the user can at
+        // least try to sign in. Bumped from 3s → 6s — on real 3G/4G connections
+        // getSession() routinely takes 4-5 seconds and a 3s budget caused a brief
+        // login flash for returning users on slow networks. The actual happy-path
+        // unblock comes from the INITIAL_SESSION handler below, which fires as
+        // soon as Supabase has resolved auth state authoritatively.
+        const timeoutPromise = new Promise(r => setTimeout(() => r(null), 6000));
 
         Promise.race([sessionPromise, timeoutPromise]).then(async (s) => {
             if (cancelled) return;
             if (s?.user) {
                 setSession(s);
                 const profile = await resolveProfile(s.user);
-                if (profile) persistSubmitted(profile);
+                if (profile) { persistSubmitted(profile); persistRole(profile); }
                 if (!cancelled) setUserProfile(profile || buildFallbackProfile(s.user));
+                if (!cancelled) setAuthLoading(false);
             }
-            if (!cancelled) setAuthLoading(false);
+            // Note: when s is null we deliberately do NOT setAuthLoading(false) here.
+            // The INITIAL_SESSION event below will resolve it authoritatively.
+            // The 6s timeout is a hard safety net for the rare case where
+            // INITIAL_SESSION never fires (e.g. SDK initialisation hung).
         }).catch((e) => {
             console.error('Auth init error:', e);
             if (!cancelled) setAuthLoading(false);
         });
 
+        // Hard safety net — in the unlikely event NEITHER getSession() NOR
+        // onAuthStateChange fires within 6s, drop the splash and show the login
+        // screen rather than hanging the user.
+        const safetyTimer = setTimeout(() => {
+            if (!cancelled) setAuthLoading(false);
+        }, 6000);
+
         const sub = onAuthStateChange(async (event, s) => {
             if (cancelled) return;
             setSession(s);
+
+            // Supabase v2 fires INITIAL_SESSION exactly once on subscribe with the
+            // current session (or null). This is the authoritative "auth has
+            // resolved" signal — drop the splash here regardless of the result.
+            if (event === 'INITIAL_SESSION') {
+                if (s?.user) {
+                    const fallback = buildFallbackProfile(s.user);
+                    if (!cancelled && fallback) setUserProfile(fallback);
+                    const profile = await resolveProfile(s.user);
+                    if (profile) { persistSubmitted(profile); persistRole(profile); }
+                    if (!cancelled && profile) setUserProfile(profile);
+                }
+                if (!cancelled) setAuthLoading(false);
+                return;
+            }
 
             if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s?.user) {
                 const fallback = buildFallbackProfile(s.user);
@@ -118,7 +160,7 @@ export function AuthProvider({ children }) {
                 if (!cancelled) setAuthStep('login');
 
                 const profile = await resolveProfile(s.user);
-                if (profile) persistSubmitted(profile);
+                if (profile) { persistSubmitted(profile); persistRole(profile); }
                 if (!cancelled && profile) setUserProfile(profile);
                 if (!cancelled) setAuthLoading(false);
             }
@@ -129,7 +171,7 @@ export function AuthProvider({ children }) {
             }
         });
 
-        return () => { cancelled = true; sub.unsubscribe(); };
+        return () => { cancelled = true; clearTimeout(safetyTimer); sub.unsubscribe(); };
     }, []);
 
     const signIn = async (username, password) => {
@@ -182,6 +224,7 @@ export function AuthProvider({ children }) {
             if (fresh) {
                 setUserProfile(fresh);
                 if (fresh.submitted) localStorage.setItem('rra_user_submitted', 'true');
+                if (fresh.role) localStorage.setItem('rra_user_role', fresh.role);
             }
             return fresh;
         } catch (e) {
