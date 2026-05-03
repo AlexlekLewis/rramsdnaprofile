@@ -14,6 +14,13 @@ import { loadGoalsForPlayer } from "../db/idpDb";
 import { computeGrowthStats } from "../db/assessmentDb";
 import { supabase } from "../supabaseClient";
 
+// ═══ FEATURE FLAG ═══
+// Default ON. Set VITE_ENABLE_FITNESS_PLAYER="false" in Vercel to hide
+// the player-side fitness tile + view without code changes.
+const FITNESS_PLAYER_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_PLAYER !== "false";
+
+const FitnessHome = React.lazy(() => import("./FitnessHome"));
+
 // Parse "Tue 5-7pm" → { dayLong: "Tuesday", dayShort: "Tue", time: "5–7 pm" }
 function parseSession(raw) {
     if (!raw || typeof raw !== 'string') return null;
@@ -197,6 +204,15 @@ export default function PlayerPortal() {
         </div>
     );
 
+    if (view === "fitness" && FITNESS_PLAYER_ENABLED) return (
+        <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
+            <PortalHeader title="Fitness" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <React.Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontFamily: F, fontSize: 13 }}>Loading fitness…</div>}>
+                <FitnessHome session={session} userProfile={userProfile} playerId={playerId} />
+            </React.Suspense>
+        </div>
+    );
+
     // ── Stat card helper ──
     const StatCard = ({ value, label, color, icon }) => (
         <div style={{ ...sCard, flex: 1, padding: 14, marginBottom: 0, textAlign: 'center', minWidth: 0 }}>
@@ -325,6 +341,22 @@ export default function PlayerPortal() {
                         <div style={{ fontSize: 10, color: B.g400, fontFamily: F, textAlign: 'center', marginTop: 4 }}>Goals & coach feedback</div>
                     </div>
                 </div>
+
+                {FITNESS_PLAYER_ENABLED && (
+                    <div onClick={() => setView('fitness')} style={{
+                        cursor: 'pointer', padding: 20, marginBottom: 20, borderRadius: 14,
+                        background: `linear-gradient(135deg, ${B.pk} 0%, ${B.bl} 100%)`,
+                        color: B.w, display: 'flex', alignItems: 'center', gap: 16,
+                        boxShadow: '0 4px 14px rgba(0,29,72,0.15)',
+                    }}>
+                        <div style={{ fontSize: 36, flexShrink: 0 }}>🏋️</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: F }}>Fitness</div>
+                            <div style={{ fontSize: 11, fontFamily: F, opacity: 0.9, marginTop: 2 }}>10-week home program · 2 sessions/week · log your sets</div>
+                        </div>
+                        <div style={{ fontSize: 22, opacity: 0.8 }}>›</div>
+                    </div>
+                )}
 
                 {/* ═══ RECENT SESSIONS CARD ═══ */}
                 <div style={{ ...sCard, padding: 16 }}>

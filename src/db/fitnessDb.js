@@ -199,3 +199,290 @@ export function groupExercisesByCategory(exercises) {
     });
     return order.map(cat => ({ category: cat, exercises: groups[cat] }));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// PLAYER-FACING — enrolment, session logs, badges
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Compute current week number (1-indexed) for an enrolment given today's date.
+ * Caps at program.total_weeks. Returns 1 for any date before start_date.
+ */
+export function computeCurrentWeek(startDateISO, totalWeeks = 10, now = new Date()) {
+    if (!startDateISO) return 1;
+    const start = new Date(startDateISO + 'T00:00:00');
+    const diffDays = Math.floor((now.getTime() - start.getTime()) / 86400000);
+    if (diffDays < 0) return 1;
+    const week = Math.floor(diffDays / 7) + 1;
+    return Math.max(1, Math.min(week, totalWeeks));
+}
+
+/**
+ * Load the player's enrolment in the active program. Returns null if none.
+ */
+export async function loadActiveEnrolment(authUserId) {
+    if (!authUserId) return null;
+    const { data, error } = await supabase
+        .from('fitness_program_enrolment')
+        .select('*, program:program_id(*)')
+        .eq('auth_user_id', authUserId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (error) { console.error('loadActiveEnrolment error:', error.message); return null; }
+    return data;
+}
+
+/**
+ * Idempotent: if the player already has an enrolment in this program return it,
+ * otherwise create one with start_date = today (UTC).
+ *
+ * Note: insert is performed by an admin/coach context server-side — for player
+ * self-enrolment we rely on the row-level security policy + a Supabase RPC
+ * (NOT YET CREATED). Until the RPC exists, this function ONLY reads. If no
+ * enrolment row exists, returns null and the UI shows "Ask coach to enrol you".
+ *
+ * For Phase 6 cohort flip we will bulk-create enrolments via a SQL UPDATE.
+ */
+export async function loadOrCreateEnrolment({ authUserId, playerId, programId, startDate }) {
+    if (!authUserId) return null;
+    // Try read first.
+    const existing = await loadActiveEnrolment(authUserId);
+    if (existing) return existing;
+
+    // Try create (will succeed only if RLS permits — currently coach/admin only).
+    if (!playerId || !programId) return null;
+    const row = {
+        program_id: programId,
+        auth_user_id: authUserId,
+        player_id: playerId,
+        start_date: startDate || new Date().toISOString().slice(0, 10),
+        status: 'active',
+    };
+    const { data, error } = await supabase
+        .from('fitness_program_enrolment')
+        .insert(row)
+        .select('*, program:program_id(*)')
+        .maybeSingle();
+    if (error) { console.warn('loadOrCreateEnrolment insert failed (likely RLS):', error.message); return null; }
+    return data;
+}
+
+/**
+ * Load all session logs for an enrolment. Used for badge compute, history view,
+ * and progress dashboard.
+ */
+export async function loadSessionLogsForEnrolment(enrolmentId) {
+    if (!enrolmentId) return [];
+    const { data, error } = await supabase
+        .from('fitness_session_logs')
+        .select('*')
+        .eq('enrolment_id', enrolmentId)
+        .order('completed_at', { ascending: false });
+    if (error) { console.error('loadSessionLogsForEnrolment error:', error.message); return []; }
+    return data || [];
+}
+
+/**
+ * Load a single existing log for (enrolment, block, week_number) — used to
+ * pre-fill the session view when a player re-opens a previously-saved session.
+ */
+export async function loadSessionLogForBlockWeek({ enrolmentId, blockId, weekNumber }) {
+    if (!enrolmentId || !blockId || !weekNumber) return null;
+    const { data, error } = await supabase
+        .from('fitness_session_logs')
+        .select('*')
+        .eq('enrolment_id', enrolmentId)
+        .eq('block_id', blockId)
+        .eq('week_number', weekNumber)
+        .maybeSingle();
+    if (error) { console.error('loadSessionLogForBlockWeek error:', error.message); return null; }
+    return data;
+}
+
+/**
+ * Save a session log via the SECURITY DEFINER RPC fitness_log_session_for_self.
+ *
+ * The RPC owns derivation of every trust-sensitive field (logged_on_time,
+ * catch_up_for_week, prescription_snapshot, logged_by_role, logged_by_user_id,
+ * player_id, day_number) — the client cannot tamper with them.
+ *
+ * Inputs:
+ *   - enrolmentId, blockId, weekNumber
+ *   - exerciseLogs: [{ exercise_id, sets: [{ set_number, completed, actual_reps? }] }, ...]
+ *   - activationDone: { activation_id: true, ... }
+ *   - notes, modificationNotes
+ *   - existingLogId: optional UI hint (the unique key is the real authority)
+ *
+ * Returns the saved fitness_session_logs row.
+ */
+export async function saveSessionLog({
+    enrolmentId, blockId, weekNumber,
+    exerciseLogs, activationDone,
+    notes, modificationNotes,
+    existingLogId,
+}) {
+    if (!enrolmentId || !blockId || !weekNumber) {
+        throw new Error('saveSessionLog: enrolmentId, blockId and weekNumber are required');
+    }
+    const { data, error } = await supabase.rpc('fitness_log_session_for_self', {
+        p_enrolment_id: enrolmentId,
+        p_block_id: blockId,
+        p_week_number: weekNumber,
+        p_exercise_logs: exerciseLogs || [],
+        p_activation_done: activationDone || {},
+        p_notes: notes ?? null,
+        p_modification_notes: modificationNotes ?? null,
+        p_existing_log_id: existingLogId || null,
+    });
+    if (error) throw new Error(`Save session log failed: ${error.message}`);
+    return data;
+}
+
+/**
+ * Load all award rows for an enrolment. Used by the badge panel.
+ */
+export async function loadAwardedBadges(enrolmentId) {
+    if (!enrolmentId) return [];
+    const { data, error } = await supabase
+        .from('fitness_badges_awarded')
+        .select('*')
+        .eq('enrolment_id', enrolmentId)
+        .order('awarded_at', { ascending: false });
+    if (error) { console.error('loadAwardedBadges error:', error.message); return []; }
+    return data || [];
+}
+
+/**
+ * Insert award rows. Best-effort — failures are logged but don't block save.
+ * RLS currently restricts writes to coach/admin; in Phase 5b we'll add a
+ * SECURITY DEFINER RPC so players can self-award via verified compute.
+ */
+export async function awardBadges(enrolmentId, authUserId, playerId, awards) {
+    if (!enrolmentId || !awards?.length) return [];
+    const rows = awards.map(a => ({
+        enrolment_id: enrolmentId,
+        auth_user_id: authUserId,
+        player_id: playerId,
+        badge_key: a.badge_key,
+        metadata: a.metadata || {},
+    }));
+    const { data, error } = await supabase
+        .from('fitness_badges_awarded')
+        .insert(rows)
+        .select();
+    if (error) {
+        // Player context can't currently insert badges; that's fine — Phase 5b
+        // will move this to a SECURITY DEFINER RPC. Don't surface as a fatal error.
+        console.warn('awardBadges (insert blocked, expected for player role):', error.message);
+        return [];
+    }
+    return data || [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// COACH/ADMIN ANALYTICS — Phase 5
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Coach view: load every active player's enrolment + their session log count,
+ * latest log date, and at-risk flag (no logs in past 10 days).
+ *
+ * Uses two queries (enrolments + logs) and merges client-side. Cohort sizes
+ * around 100 keep this trivially fast.
+ */
+export async function loadCohortFitnessSummary(programId) {
+    if (!programId) return [];
+    const { data: enrolments, error: e1 } = await supabase
+        .from('fitness_program_enrolment')
+        .select('id, player_id, auth_user_id, start_date, status, canary_enabled, player:player_id(id, name, headshot_url)')
+        .eq('program_id', programId)
+        .eq('status', 'active');
+    if (e1) { console.error('loadCohortFitnessSummary enrolments:', e1.message); return []; }
+
+    const enrolmentIds = (enrolments || []).map(e => e.id);
+    if (enrolmentIds.length === 0) return [];
+
+    const { data: logs, error: e2 } = await supabase
+        .from('fitness_session_logs')
+        .select('enrolment_id, completed_at, week_number, day_number, logged_on_time')
+        .in('enrolment_id', enrolmentIds)
+        .order('completed_at', { ascending: false });
+    if (e2) { console.error('loadCohortFitnessSummary logs:', e2.message); return []; }
+
+    const logsByEnrolment = {};
+    (logs || []).forEach(l => {
+        if (!logsByEnrolment[l.enrolment_id]) logsByEnrolment[l.enrolment_id] = [];
+        logsByEnrolment[l.enrolment_id].push(l);
+    });
+
+    const now = new Date();
+    return (enrolments || []).map(en => {
+        const myLogs = logsByEnrolment[en.id] || [];
+        const sessionsCount = myLogs.length;
+        const lastLogAt = myLogs[0] ? new Date(myLogs[0].completed_at) : null;
+        const daysSinceLast = lastLogAt ? Math.floor((now - lastLogAt) / 86400000) : null;
+        const atRisk = sessionsCount === 0 || (daysSinceLast !== null && daysSinceLast >= 10);
+        return {
+            enrolment_id: en.id,
+            player_id: en.player_id,
+            auth_user_id: en.auth_user_id,
+            start_date: en.start_date,
+            canary_enabled: en.canary_enabled,
+            player: en.player,
+            sessionsCount,
+            lastLogAt,
+            daysSinceLast,
+            atRisk,
+        };
+    });
+}
+
+/**
+ * Bulk-enrol every submitted player into a program who isn't already enrolled.
+ * Returns the count of new rows inserted. Admin-only via RLS.
+ */
+export async function bulkEnrolSubmittedPlayers({ programId, startDate, enrolledBy }) {
+    if (!programId) throw new Error('bulkEnrolSubmittedPlayers: programId is required');
+    // Pull all submitted players.
+    const { data: players, error: e1 } = await supabase
+        .from('players')
+        .select('id, auth_user_id')
+        .eq('submitted', true)
+        .not('auth_user_id', 'is', null);
+    if (e1) throw new Error(`Load players failed: ${e1.message}`);
+
+    // Pull existing enrolments to skip dupes.
+    const { data: existing, error: e2 } = await supabase
+        .from('fitness_program_enrolment')
+        .select('auth_user_id')
+        .eq('program_id', programId);
+    if (e2) throw new Error(`Load existing enrolments failed: ${e2.message}`);
+
+    const existingSet = new Set((existing || []).map(e => e.auth_user_id));
+    const toEnrol = (players || []).filter(p => !existingSet.has(p.auth_user_id));
+
+    if (toEnrol.length === 0) return { inserted: 0, alreadyEnrolled: existingSet.size };
+
+    const today = startDate || new Date().toISOString().slice(0, 10);
+    const rows = toEnrol.map(p => ({
+        program_id: programId,
+        auth_user_id: p.auth_user_id,
+        player_id: p.id,
+        start_date: today,
+        status: 'active',
+        canary_enabled: true,
+        enrolled_by: enrolledBy || null,
+    }));
+
+    // Use upsert with ignoreDuplicates against the (program_id, auth_user_id)
+    // unique constraint so concurrent admins don't blow up the whole batch
+    // if a row was inserted between our SELECT and INSERT.
+    const { data, error } = await supabase
+        .from('fitness_program_enrolment')
+        .upsert(rows, { onConflict: 'program_id,auth_user_id', ignoreDuplicates: true })
+        .select('id');
+    if (error) throw new Error(`Bulk upsert enrolments failed: ${error.message}`);
+    return { inserted: data?.length || 0, alreadyEnrolled: existingSet.size };
+}
