@@ -478,6 +478,22 @@ export default function PlayerOnboarding() {
         return d.getFullYear() === +yyyy && d.getMonth() === +mm - 1 && d.getDate() === +dd && d < new Date();
     };
     const dobInvalid = pd.dob && !isValidDob(pd.dob);
+    // ── DD/MM/YYYY (stored) ↔ YYYY-MM-DD (native <input type="date"> value) ──
+    const dobToIso = (dob) => {
+        if (!dob) return '';
+        const m = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) return '';
+        const [, dd, mm, yyyy] = m;
+        return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    };
+    const isoToDob = (iso) => {
+        if (!iso) return '';
+        const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return '';
+        const [, yyyy, mm, dd] = m;
+        return `${dd}/${mm}/${yyyy}`;
+    };
+    const todayIso = new Date().toISOString().slice(0, 10);
 
     // ── Step validation ──
     const countSelfRatings = (prefix) => Object.keys(pd).filter(k => k.startsWith(prefix) && pd[k] > 0).length;
@@ -517,7 +533,7 @@ export default function PlayerOnboarding() {
     // ── Onboarding step timer (auto-saves to database) ──
     const advanceStep = (next) => {
         const err = validateStep(pStep);
-        if (err) { setStepError(err); return; }
+        if (err) { setStepError(err); goTop(); return; }
         setStepError('');
         const elapsed = Date.now() - stepStartRef.current;
         const progress = pd.onboardingProgress || { steps: {}, totalTimeMs: 0, lastStepReached: 0 };
@@ -542,9 +558,15 @@ export default function PlayerOnboarding() {
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0 12px" }}>
                     <Inp half label="Full Name *" value={pd.name} onChange={v => pu("name", v)} ph="Your full name" />
                     <div style={{ flex: 1, minWidth: 130, marginBottom: 8 }}>
-                        <div style={{ fontSize: 10, color: dobInvalid ? B.red : B.g600, fontFamily: F, marginBottom: 1 }}>Date of Birth *{dobInvalid ? ' (use DD/MM/YYYY)' : ''}</div>
-                        <input type="text" value={pd.dob || ""} onChange={e => pu("dob", e.target.value)} placeholder="DD/MM/YYYY"
-                            style={{ width: "100%", border: "none", borderBottom: `1.5px solid ${dobInvalid ? B.red : B.g200}`, padding: "5px 0", fontSize: 12, fontFamily: F, color: B.g800, outline: "none", background: "transparent", boxSizing: "border-box" }} />
+                        <div style={{ fontSize: 10, color: dobInvalid ? B.red : B.g600, fontFamily: F, marginBottom: 1 }}>Date of Birth *</div>
+                        <input
+                            type="date"
+                            value={dobToIso(pd.dob)}
+                            onChange={e => pu("dob", isoToDob(e.target.value))}
+                            min="1960-01-01"
+                            max={todayIso}
+                            style={{ width: "100%", border: "none", borderBottom: `1.5px solid ${dobInvalid ? B.red : B.g200}`, padding: "5px 0", fontSize: 12, fontFamily: F, color: pd.dob ? B.g800 : B.g400, outline: "none", background: "transparent", boxSizing: "border-box", appearance: "none", WebkitAppearance: "none" }}
+                        />
                     </div>
                     <Inp half label="Phone" value={pd.phone} onChange={v => pu("phone", v)} ph="Mobile" />
                     <Inp half label="Email" value={pd.email} onChange={v => pu("email", v)} ph="Email" />
