@@ -352,7 +352,7 @@ export default function PlayerPortal() {
                         <div style={{ fontSize: 36, flexShrink: 0 }}>🏋️</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: F }}>Fitness</div>
-                            <div style={{ fontSize: 11, fontFamily: F, opacity: 0.9, marginTop: 2 }}>10-week home program · 2 sessions/week · log your sets</div>
+                            <div style={{ fontSize: 11, fontFamily: F, opacity: 0.9, marginTop: 2 }}>10-week home program · 3 sessions/week · strength + conditioning</div>
                         </div>
                         <div style={{ fontSize: 22, opacity: 0.8 }}>›</div>
                     </div>
