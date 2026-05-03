@@ -68,7 +68,7 @@ export const BADGE_CATALOGUE = [
         tier: 2,
         permanent: true,
         repeatable: false,
-        howToEarn: 'Use the Past Sessions tab to backfill a missed week.',
+        howToEarn: 'Backfill a missed session from the Past Sessions tab.',
         flavour: 'You came back. That counts more than not missing.',
     },
     {

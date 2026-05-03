@@ -22,7 +22,7 @@ const Pill = ({ children, color = B.bl }) => (
     }}>{children}</span>
 );
 
-const Toast = ({ kind, text, onClose }) => {
+const Toast = ({ kind, text, onClose, onRetry }) => {
     if (!text) return null;
     const palette = kind === 'error'
         ? { bg: '#FEF2F2', border: B.red, fg: B.red }
@@ -39,8 +39,11 @@ const Toast = ({ kind, text, onClose }) => {
             display: 'flex', alignItems: 'center', gap: 12, maxWidth: 'calc(100vw - 32px)',
         }}>
             <span>{text}</span>
+            {onRetry && (
+                <button onClick={onRetry} style={{ background: palette.fg, color: B.w, border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: F, letterSpacing: 0.3 }}>Try again</button>
+            )}
             {onClose && (
-                <button onClick={onClose} style={{ background: 'none', border: 'none', color: palette.fg, fontSize: 16, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+                <button onClick={onClose} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: palette.fg, fontSize: 16, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
             )}
         </div>
     );
@@ -166,7 +169,10 @@ export default function FitnessSession({
     const [toast, setToast] = useState(null);
     const [loadingExisting, setLoadingExisting] = useState(true);
 
-    // Load existing log if any
+    // Load existing log on mount only — keyed strictly by the slot identity
+    // (enrolment + block + week). Intentionally NOT depending on `exercises`
+    // because it is rebuilt every parent render and would otherwise re-fire
+    // this effect mid-session and wipe unsaved ticks.
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -180,6 +186,8 @@ export default function FitnessSession({
                 if (cancelled) return;
                 if (log) {
                     setExistingLog(log);
+                    // Use the freshest reference of `exercises` via closure;
+                    // the slot key changing is what brings us here, not exercises mutating.
                     setExerciseLogs(mergeExerciseLogsWithExisting(exercises, log.exercise_logs));
                     setActivationDone(log.activation_done || {});
                     setNotes(log.notes || '');
@@ -194,7 +202,8 @@ export default function FitnessSession({
             }
         })();
         return () => { cancelled = true; };
-    }, [enrolment?.id, block?.id, weekNumber, exercises]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enrolment?.id, block?.id, weekNumber]);
 
     const toggleSet = (exerciseId, setNumber) => {
         setExerciseLogs(prev => prev.map(el => {
@@ -247,37 +256,32 @@ export default function FitnessSession({
         setSaving(true);
         setToast(null);
         try {
-            const prescriptionSnapshot = {
-                exercises: exercises.map(ex => ({
-                    id: ex.id, category: ex.category, name: ex.name,
-                    prescription: ex.prescription, prescribed_sets: ex.prescribed_sets,
-                    prescribed_reps: ex.prescribed_reps,
-                })),
-                activation: activation,
-                day_label: block.day_label,
-                rest_seconds: block.rest_seconds,
-            };
+            // The server (RPC) builds the canonical prescription_snapshot from
+            // the trusted block row — we don't pass one. Trust-sensitive fields
+            // (logged_on_time, catch_up_for_week, logged_by_role, player_id)
+            // are derived server-side too.
             const saved = await saveSessionLog({
                 enrolmentId: enrolment.id,
                 blockId: block.id,
-                authUserId,
-                playerId,
                 weekNumber,
-                dayNumber: block.day_number,
                 exerciseLogs,
                 activationDone,
                 notes,
                 modificationNotes,
-                prescriptionSnapshot,
-                currentWeek,
-                loggedByRole: 'player',
-                loggedByUserId: authUserId,
                 existingLogId: existingLog?.id,
             });
             setToast({ kind: 'success', text: existingLog ? 'Session updated.' : 'Session logged. Nice work.' });
+            // Auto-dismiss success toast after a moment so the player sees the
+            // back transition without clicking away.
+            setTimeout(() => setToast(null), 2500);
             if (onSaved) onSaved(saved);
         } catch (e) {
-            setToast({ kind: 'error', text: e.message || 'Save failed — please try again.' });
+            // Keep ticked sets in state; offer a one-click retry on the toast.
+            setToast({
+                kind: 'error',
+                text: e.message || 'Save failed — please try again.',
+                retry: true,
+            });
         } finally {
             setSaving(false);
         }
@@ -293,7 +297,12 @@ export default function FitnessSession({
 
     return (
         <div style={{ padding: '12px 16px 90px', fontFamily: F, maxWidth: 720, margin: '0 auto' }}>
-            <Toast kind={toast?.kind} text={toast?.text} onClose={() => setToast(null)} />
+            <Toast
+                kind={toast?.kind}
+                text={toast?.text}
+                onClose={() => setToast(null)}
+                onRetry={toast?.retry ? () => { setToast(null); save(); } : null}
+            />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <button onClick={onBack} style={{ background: 'none', border: 'none', color: B.bl, fontSize: 13, fontFamily: F, cursor: 'pointer', fontWeight: 700, padding: '4px 8px' }}>← Back</button>

@@ -302,71 +302,40 @@ export async function loadSessionLogForBlockWeek({ enrolmentId, blockId, weekNum
 }
 
 /**
- * Insert or update a session log. The unique constraint on
- * (enrolment_id, week_number, day_number) forces upsert semantics: if a log
- * already exists for this slot, update; otherwise insert.
+ * Save a session log via the SECURITY DEFINER RPC fitness_log_session_for_self.
+ *
+ * The RPC owns derivation of every trust-sensitive field (logged_on_time,
+ * catch_up_for_week, prescription_snapshot, logged_by_role, logged_by_user_id,
+ * player_id, day_number) — the client cannot tamper with them.
  *
  * Inputs:
- *   - enrolmentId, blockId, authUserId, playerId
- *   - weekNumber, dayNumber
+ *   - enrolmentId, blockId, weekNumber
  *   - exerciseLogs: [{ exercise_id, sets: [{ set_number, completed, actual_reps? }] }, ...]
- *   - activationDone: { hip_bridges: true, ... }
+ *   - activationDone: { activation_id: true, ... }
  *   - notes, modificationNotes
- *   - prescriptionSnapshot: snapshot of block.exercises at log time (frozen)
- *   - currentWeek: computed from enrolment start date — used to derive
- *     logged_on_time and catch_up_for_week.
- *   - loggedByRole: 'player' (default) or 'coach' for coach-on-behalf
- *   - loggedByUserId: auth.uid() of whoever clicked Save
+ *   - existingLogId: optional UI hint (the unique key is the real authority)
+ *
+ * Returns the saved fitness_session_logs row.
  */
 export async function saveSessionLog({
-    enrolmentId, blockId, authUserId, playerId,
-    weekNumber, dayNumber, exerciseLogs, activationDone,
-    notes, modificationNotes, prescriptionSnapshot,
-    currentWeek, loggedByRole = 'player', loggedByUserId,
+    enrolmentId, blockId, weekNumber,
+    exerciseLogs, activationDone,
+    notes, modificationNotes,
     existingLogId,
 }) {
-    if (!enrolmentId || !blockId || !authUserId || !playerId || !weekNumber || !dayNumber) {
-        throw new Error('saveSessionLog: missing required fields');
+    if (!enrolmentId || !blockId || !weekNumber) {
+        throw new Error('saveSessionLog: enrolmentId, blockId and weekNumber are required');
     }
-    const onTime = weekNumber === currentWeek;
-    const catchUpFor = onTime ? null : weekNumber;
-
-    const row = {
-        enrolment_id: enrolmentId,
-        block_id: blockId,
-        week_number: weekNumber,
-        day_number: dayNumber,
-        auth_user_id: authUserId,
-        player_id: playerId,
-        activation_done: activationDone || {},
-        exercise_logs: exerciseLogs || [],
-        prescription_snapshot: prescriptionSnapshot || {},
-        notes: notes ? String(notes) : null,
-        modification_notes: modificationNotes ? String(modificationNotes) : null,
-        completed_at: new Date().toISOString(),
-        logged_on_time: onTime,
-        catch_up_for_week: catchUpFor,
-        logged_by_user_id: loggedByUserId || authUserId,
-        logged_by_role: loggedByRole,
-        updated_at: new Date().toISOString(),
-    };
-
-    if (existingLogId) {
-        const { data, error } = await supabase
-            .from('fitness_session_logs')
-            .update(row)
-            .eq('id', existingLogId)
-            .select()
-            .single();
-        if (error) throw new Error(`Update session log failed: ${error.message}`);
-        return data;
-    }
-
-    const { data, error } = await supabase
-        .from('fitness_session_logs')
-        .insert(row)
-        .select()
-        .single();
+    const { data, error } = await supabase.rpc('fitness_log_session_for_self', {
+        p_enrolment_id: enrolmentId,
+        p_block_id: blockId,
+        p_week_number: weekNumber,
+        p_exercise_logs: exerciseLogs || [],
+        p_activation_done: activationDone || {},
+        p_notes: notes ?? null,
+        p_modification_notes: modificationNotes ?? null,
+        p_existing_log_id: existingLogId || null,
+    });
     if (error) throw new Error(`Save session log failed: ${error.message}`);
     return data;
 }
@@ -507,10 +476,13 @@ export async function bulkEnrolSubmittedPlayers({ programId, startDate, enrolled
         enrolled_by: enrolledBy || null,
     }));
 
+    // Use upsert with ignoreDuplicates against the (program_id, auth_user_id)
+    // unique constraint so concurrent admins don't blow up the whole batch
+    // if a row was inserted between our SELECT and INSERT.
     const { data, error } = await supabase
         .from('fitness_program_enrolment')
-        .insert(rows)
+        .upsert(rows, { onConflict: 'program_id,auth_user_id', ignoreDuplicates: true })
         .select('id');
-    if (error) throw new Error(`Bulk insert enrolments failed: ${error.message}`);
+    if (error) throw new Error(`Bulk upsert enrolments failed: ${error.message}`);
     return { inserted: data?.length || 0, alreadyEnrolled: existingSet.size };
 }
