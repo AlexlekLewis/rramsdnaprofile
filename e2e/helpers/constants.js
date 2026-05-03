@@ -53,6 +53,7 @@ export const SEL = {
   dashboardNav: 'button:has-text("Dashboard")',
   profilesNav: 'button:has-text("Profiles")',
   squadsNav: 'button:has-text("Squads")',
+  fitnessNav: 'button:has-text("Fitness")',
 };
 
 // ── Roles ──
