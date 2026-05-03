@@ -72,17 +72,22 @@ test.describe('2.3 — Assessment Flow', () => {
     if (await cards.count() > 0) {
       await cards.first().click();
       await page.waitForTimeout(1500);
-      const btn = page.locator('text=/BEGIN ASSESSMENT/i');
+      // BEGIN ASSESSMENT renders TWICE on the player profile (top + bottom).
+      // Pin to .first() so strict-mode click resolves unambiguously.
+      const btn = page.locator('text=/BEGIN ASSESSMENT/i').first();
       if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
         await btn.click();
-        await page.waitForTimeout(1000);
+        // Wait for the assessment view to actually render — the lazy-loaded
+        // CoachAssessment chunk + engine calculations need more than a fixed
+        // 1s. Wait until either an "Identity" or "Technical" tab is visible
+        // (the four-tab nav rendered on the assessment page).
+        await page.waitForSelector('text=/Identity|Technical/i', { timeout: 15000 }).catch(() => {});
       }
     }
   });
 
   test('assessment shows tabbed navigation', async ({ page }) => {
-    const hasTabs = await page.locator('text=/Identity|Technical/i').count() > 0;
-    expect(hasTabs).toBe(true);
+    await expect(page.locator('text=/Identity|Technical/i').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('can navigate between assessment pages', async ({ page }) => {
