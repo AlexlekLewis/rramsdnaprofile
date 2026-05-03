@@ -49,7 +49,7 @@ const Toast = ({ kind, text, onClose, onRetry }) => {
     );
 };
 
-const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChange, isPrescribed }) {
+const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChange, isPrescribed, exerciseName }) {
     const completed = !!set?.completed;
     return (
         <div style={{
@@ -57,28 +57,36 @@ const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChan
             background: completed ? `${B.grn}10` : (isPrescribed ? B.g50 : B.w),
             borderRadius: 8, marginBottom: 6, border: `1px solid ${completed ? B.grn : B.g200}`,
         }}>
+            {/* 44 px tap area for the toggle (mobile-friendly), inner 28 px visual circle. */}
             <button
                 onClick={onToggle}
-                aria-label={`Toggle set ${rowNumber}`}
+                aria-label={`Toggle set ${rowNumber}${exerciseName ? ` of ${exerciseName}` : ''}`}
+                aria-pressed={completed}
                 style={{
-                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                    background: completed ? B.grn : B.w,
-                    border: `2px solid ${completed ? B.grn : B.g200}`,
-                    color: B.w, cursor: 'pointer', fontWeight: 800, fontSize: 14, fontFamily: F,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 44, height: 44, padding: 0, flexShrink: 0,
+                    background: 'transparent', border: 'none',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '-8px -8px -8px 0',
                 }}
             >
-                {completed ? '✓' : ''}
+                <span style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: completed ? B.grn : B.w,
+                    border: `2px solid ${completed ? B.grn : B.g200}`,
+                    color: B.w, fontWeight: 800, fontSize: 14, fontFamily: F,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{completed ? '✓' : ''}</span>
             </button>
             <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, minWidth: 48 }}>
                 Set {rowNumber}
-                {!isPrescribed && <span style={{ fontSize: 9, color: B.g400, fontWeight: 600, marginLeft: 4 }}>extra</span>}
+                {!isPrescribed && <span style={{ fontSize: 10, color: B.g400, fontWeight: 600, marginLeft: 4 }}>extra</span>}
             </div>
             <input
                 type="number"
                 value={set?.actual_reps ?? ''}
                 onChange={(e) => onRepsChange(e.target.value)}
                 placeholder="reps"
+                aria-label={`Set ${rowNumber}${exerciseName ? ` of ${exerciseName}` : ''} actual reps`}
                 style={{
                     flex: 1, padding: '6px 10px', border: `1px solid ${B.g200}`,
                     borderRadius: 6, fontFamily: F, fontSize: 12, color: B.nvD,
@@ -123,6 +131,7 @@ const ExerciseCard = React.memo(function ExerciseCard({ exercise, exLog, onToggl
                             rowNumber={setNumber}
                             set={set}
                             isPrescribed={isPrescribed}
+                            exerciseName={exercise.name}
                             onToggle={() => onToggleSet(exercise.id, setNumber)}
                             onRepsChange={(v) => onRepsChange(exercise.id, setNumber, v)}
                         />
@@ -385,8 +394,9 @@ export default function FitnessSession({
             })}
 
             <div style={{ ...sCard, marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: B.g600, fontWeight: 700, fontFamily: F, letterSpacing: 0.5, marginBottom: 6 }}>NOTES (OPTIONAL)</div>
+                <label htmlFor="fitness-notes" style={{ fontSize: 10, color: B.g600, fontWeight: 700, fontFamily: F, letterSpacing: 0.5, marginBottom: 6, display: 'block' }}>NOTES (OPTIONAL)</label>
                 <textarea
+                    id="fitness-notes"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="How did it feel? Any wins or things to work on?"
@@ -396,8 +406,9 @@ export default function FitnessSession({
             </div>
 
             <div style={{ ...sCard, marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: B.g600, fontWeight: 700, fontFamily: F, letterSpacing: 0.5, marginBottom: 6 }}>MODIFICATIONS (OPTIONAL)</div>
+                <label htmlFor="fitness-modifications" style={{ fontSize: 10, color: B.g600, fontWeight: 700, fontFamily: F, letterSpacing: 0.5, marginBottom: 6, display: 'block' }}>MODIFICATIONS (OPTIONAL)</label>
                 <textarea
+                    id="fitness-modifications"
                     value={modificationNotes}
                     onChange={(e) => setModificationNotes(e.target.value)}
                     placeholder="Did you swap an exercise for an injury or other reason? Note it here."

@@ -6,6 +6,7 @@ import { supabase } from "../supabaseClient";
 import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortPlayer, updateCohortPlayer } from "../db/adminDb";
 import { getAge } from "../engine/ratingEngine";
 import HeadshotAvatar from "../shared/HeadshotAvatar";
+const FitnessPlayerSummary = React.lazy(() => import("./FitnessPlayerSummary"));
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
@@ -434,6 +435,11 @@ export default function AdminProfiles() {
                                             <InfoRow label="Payment" value={p.paymentStatus} />
                                             <InfoRow label="Plan" value={p.paymentOption} />
                                             <InfoRow label="Source" value={p.source} />
+
+                                            {/* Fitness drill-in (Phase 5b) */}
+                                            <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading fitness…</div>}>
+                                                <FitnessPlayerSummary playerId={p.dnaId || p.id} />
+                                            </React.Suspense>
 
                                             {/* Action buttons at bottom of view mode */}
                                             <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: `1px solid ${B.g100}` }}>

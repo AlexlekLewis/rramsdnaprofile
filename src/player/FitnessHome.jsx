@@ -96,7 +96,7 @@ const SessionCard = ({ block, weekNumber, status, onOpen, isCatchUp }) => (
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
             <StatusPill kind={status.kind} catchUp={status.catchUp} />
-            {isCatchUp && status.kind === 'pending' && <span style={{ fontSize: 9, color: B.amb, fontWeight: 700, fontFamily: F }}>catch-up</span>}
+            {isCatchUp && status.kind === 'pending' && <span style={{ fontSize: 10, color: '#92400E', fontWeight: 700, fontFamily: F }}>catch-up</span>}
             <div style={{ fontSize: 18, color: B.bl }}>›</div>
         </div>
     </button>
@@ -132,7 +132,7 @@ const BadgeCard = ({ state }) => {
                         {isPending ? state.howToEarn : state.flavour}
                     </div>
                     {state.recoverHint && (
-                        <div style={{ fontSize: 10, color: B.amb, fontFamily: F, marginTop: 4, fontWeight: 700 }}>
+                        <div style={{ fontSize: 11, color: '#92400E', fontFamily: F, marginTop: 4, fontWeight: 700 }}>
                             {state.recoverHint}
                         </div>
                     )}
