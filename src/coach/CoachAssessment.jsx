@@ -31,15 +31,25 @@ const EngineGuide = React.lazy(() => import("./EngineGuide"));
 const AdminDashboard = React.lazy(() => import("./AdminDashboard"));
 const AdminProfiles = React.lazy(() => import("./AdminProfiles"));
 const SquadRoster = React.lazy(() => import("./SquadRoster"));
+const FitnessProgramAdmin = React.lazy(() => import("./FitnessProgramAdmin"));
+
+// ═══ FEATURE FLAGS ═══
+// Default ON for admin-only screens (the role gate is the safety).
+// Set VITE_ENABLE_FITNESS_ADMIN="false" in Vercel to hide the tab without code changes.
+const FITNESS_ADMIN_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_ADMIN !== "false";
 
 // ═══ BOTTOM NAV BAR ═══
-const NAV_ITEMS_ADMIN = [
+const NAV_ITEMS_ADMIN_BASE = [
     { id: 'list', label: 'Roster', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
     { id: 'admin', label: 'Dashboard', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
     { id: 'profiles', label: 'Profiles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
     { id: 'squads', label: 'Squads', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> },
 ];
-const NAV_ITEMS_COACH = [NAV_ITEMS_ADMIN[0]]; // Coach only sees Roster
+const NAV_ITEM_FITNESS = { id: 'fitness', label: 'Fitness', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 6.5l11 11"/><path d="M21 21l-1-1"/><path d="M3 3l1 1"/><path d="M18 22l4-4"/><path d="M2 6l4-4"/><path d="M3 10l7-7"/><path d="M14 21l7-7"/></svg> };
+const NAV_ITEMS_ADMIN = FITNESS_ADMIN_ENABLED
+    ? [...NAV_ITEMS_ADMIN_BASE, NAV_ITEM_FITNESS]
+    : NAV_ITEMS_ADMIN_BASE;
+const NAV_ITEMS_COACH = [NAV_ITEMS_ADMIN_BASE[0]]; // Coach only sees Roster
 
 const CoachNavBar = React.memo(({ active, onNavigate, isAdmin: showAdmin }) => {
     const items = showAdmin ? NAV_ITEMS_ADMIN : NAV_ITEMS_COACH;
@@ -439,6 +449,17 @@ export default function CoachAssessment() {
             <Hdr label="SQUAD ROSTER" onLogoClick={signOut} />
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading squad roster...</div>}>
                 <SquadRoster />
+            </Suspense>
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+        </div>
+    );
+
+    // ═══ FITNESS PROGRAM ADMIN ═══
+    if (cView === "fitness" && isAdmin && FITNESS_ADMIN_ENABLED) return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Hdr label="FITNESS PROGRAM" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading fitness program...</div>}>
+                <FitnessProgramAdmin />
             </Suspense>
             <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
         </div>
