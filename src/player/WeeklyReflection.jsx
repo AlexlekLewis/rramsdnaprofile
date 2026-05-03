@@ -25,6 +25,103 @@ const CATEGORY_COLOR = {
 };
 const colorForCategory = (cat) => CATEGORY_COLOR[cat] || B.nvD;
 
+// ── Extracted to module scope so the textarea inside QuestionCard keeps focus
+//    across keystrokes. Defining these inside WeeklyReflection caused React to
+//    unmount/remount on every parent re-render (every character typed).
+const TabBtn = ({ active, label, badgeCount, onClick }) => (
+    <button onClick={onClick} style={{
+        flex: 1, padding: '10px 8px', border: 'none', background: 'transparent',
+        borderBottom: active ? `2px solid ${B.bl}` : `2px solid transparent`,
+        color: active ? B.bl : B.g400, fontWeight: active ? 800 : 600,
+        fontSize: 11, fontFamily: F, cursor: 'pointer', transition: 'all 0.2s',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    }}>
+        {label}
+        {badgeCount > 0 && (
+            <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: B.amb, color: B.w, lineHeight: 1.4 }}>{badgeCount}</span>
+        )}
+    </button>
+);
+
+const CategoryHeader = ({ category }) => {
+    const color = colorForCategory(category);
+    return (
+        <div style={{
+            fontSize: 11, fontWeight: 800, color, fontFamily: F,
+            textTransform: 'uppercase', letterSpacing: 1.2,
+            background: `${color}12`, border: `1px solid ${color}30`,
+            padding: '6px 12px', borderRadius: 8,
+            marginBottom: 12, marginTop: 18, display: 'inline-block',
+        }}>{category}</div>
+    );
+};
+
+const QuestionCard = ({ q, idx, value, readOnly, onChange }) => {
+    const t = questionType(q);
+    const accent = colorForCategory(q.category);
+    return (
+        <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 8, lineHeight: 1.4 }}>
+                {idx + 1}. {q.question}
+            </div>
+
+            {/* Multiple choice */}
+            {t === 'choice' && (
+                readOnly ? (
+                    <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F }}>
+                        {(() => {
+                            const chosen = (q.options || []).find(o => o.id === value);
+                            if (!chosen) return <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>;
+                            return <span style={{ fontWeight: 700, color: accent }}>{chosen.label}</span>;
+                        })()}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {(q.options || []).map(opt => {
+                            const selected = value === opt.id;
+                            return (
+                                <button key={opt.id} type="button" onClick={() => onChange(q.id, opt.id)}
+                                    style={{
+                                        textAlign: 'left', padding: '12px 14px', borderRadius: 10,
+                                        border: `2px solid ${selected ? accent : B.g200}`,
+                                        background: selected ? `${accent}10` : B.w,
+                                        color: selected ? accent : B.g700,
+                                        fontSize: 13, fontFamily: F, fontWeight: selected ? 700 : 500,
+                                        cursor: 'pointer', transition: 'all 0.15s',
+                                    }}>
+                                    <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? accent : B.g400}`, background: selected ? accent : 'transparent', marginRight: 10, verticalAlign: 'middle', position: 'relative', boxSizing: 'border-box' }}>
+                                        {selected && <span style={{ position: 'absolute', top: 3, left: 3, width: 8, height: 8, borderRadius: '50%', background: B.w }} />}
+                                    </span>
+                                    {opt.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )
+            )}
+
+            {/* Text */}
+            {t === 'text' && (
+                readOnly ? (
+                    <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {value && String(value).trim()
+                            ? value
+                            : <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>}
+                    </div>
+                ) : (
+                    <textarea
+                        value={value || ''}
+                        onChange={e => onChange(q.id, e.target.value)}
+                        placeholder="Write your reflection…"
+                        rows={4}
+                        style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 13, fontFamily: F, background: B.g50, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
+                    />
+                )
+            )}
+        </div>
+    );
+};
+
 export default function WeeklyReflection({ session, userProfile, playerId: playerIdProp }) {
     const authUserId = session?.user?.id;
     const [tab, setTab] = useState('current'); // 'current' | 'past'
@@ -210,103 +307,6 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
         return <div style={{ padding: 24, color: B.g400, fontSize: 12, fontFamily: F, textAlign: 'center' }}>Loading…</div>;
     }
     if (!authUserId) return null;
-
-    // ── Tab button ──
-    const TabBtn = ({ id, label, badgeCount }) => (
-        <button onClick={() => setTab(id)} style={{
-            flex: 1, padding: '10px 8px', border: 'none', background: 'transparent',
-            borderBottom: tab === id ? `2px solid ${B.bl}` : `2px solid transparent`,
-            color: tab === id ? B.bl : B.g400, fontWeight: tab === id ? 800 : 600,
-            fontSize: 11, fontFamily: F, cursor: 'pointer', transition: 'all 0.2s',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        }}>
-            {label}
-            {badgeCount > 0 && (
-                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: B.amb, color: B.w, lineHeight: 1.4 }}>{badgeCount}</span>
-            )}
-        </button>
-    );
-
-    // ── Category header ──
-    const CategoryHeader = ({ category }) => {
-        const color = colorForCategory(category);
-        return (
-            <div style={{
-                fontSize: 11, fontWeight: 800, color, fontFamily: F,
-                textTransform: 'uppercase', letterSpacing: 1.2,
-                background: `${color}12`, border: `1px solid ${color}30`,
-                padding: '6px 12px', borderRadius: 8,
-                marginBottom: 12, marginTop: 18, display: 'inline-block',
-            }}>{category}</div>
-        );
-    };
-
-    // ── Question card (read or edit, text or multiple choice) ──
-    const QuestionCard = ({ q, idx, value, readOnly, onChange }) => {
-        const t = questionType(q);
-        const accent = colorForCategory(q.category);
-        return (
-            <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: B.nvD, fontFamily: F, marginBottom: 8, lineHeight: 1.4 }}>
-                    {idx + 1}. {q.question}
-                </div>
-
-                {/* Multiple choice */}
-                {t === 'choice' && (
-                    readOnly ? (
-                        <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F }}>
-                            {(() => {
-                                const chosen = (q.options || []).find(o => o.id === value);
-                                if (!chosen) return <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>;
-                                return <span style={{ fontWeight: 700, color: accent }}>{chosen.label}</span>;
-                            })()}
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {(q.options || []).map(opt => {
-                                const selected = value === opt.id;
-                                return (
-                                    <button key={opt.id} type="button" onClick={() => onChange(q.id, opt.id)}
-                                        style={{
-                                            textAlign: 'left', padding: '12px 14px', borderRadius: 10,
-                                            border: `2px solid ${selected ? accent : B.g200}`,
-                                            background: selected ? `${accent}10` : B.w,
-                                            color: selected ? accent : B.g700,
-                                            fontSize: 13, fontFamily: F, fontWeight: selected ? 700 : 500,
-                                            cursor: 'pointer', transition: 'all 0.15s',
-                                        }}>
-                                        <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? accent : B.g400}`, background: selected ? accent : 'transparent', marginRight: 10, verticalAlign: 'middle', position: 'relative', boxSizing: 'border-box' }}>
-                                            {selected && <span style={{ position: 'absolute', top: 3, left: 3, width: 8, height: 8, borderRadius: '50%', background: B.w }} />}
-                                        </span>
-                                        {opt.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    )
-                )}
-
-                {/* Text */}
-                {t === 'text' && (
-                    readOnly ? (
-                        <div style={{ background: B.g50, padding: 12, borderRadius: 8, border: `1px solid ${B.g100}`, fontSize: 13, color: B.nv, fontFamily: F, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                            {value && String(value).trim()
-                                ? value
-                                : <span style={{ color: B.g400, fontStyle: 'italic' }}>No answer provided.</span>}
-                        </div>
-                    ) : (
-                        <textarea
-                            value={value || ''}
-                            onChange={e => onChange(q.id, e.target.value)}
-                            placeholder="Write your reflection…"
-                            rows={4}
-                            style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 13, fontFamily: F, background: B.g50, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
-                        />
-                    )
-                )}
-            </div>
-        );
-    };
 
     // ── This Week — three states: empty / submit / submitted ──
     const renderCurrentTab = () => {
@@ -559,8 +559,8 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
             )}
 
             <div style={{ display: 'flex', background: B.w, borderBottom: `1px solid ${B.g200}` }}>
-                <TabBtn id="current" label="This Week" />
-                <TabBtn id="past" label="Past Weeks" badgeCount={unansweredCount} />
+                <TabBtn active={tab === 'current'} label="This Week" onClick={() => setTab('current')} />
+                <TabBtn active={tab === 'past'} label="Past Weeks" badgeCount={unansweredCount} onClick={() => setTab('past')} />
             </div>
 
             <div style={{ padding: 16 }}>
