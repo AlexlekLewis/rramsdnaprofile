@@ -57,7 +57,9 @@ const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChan
             background: completed ? `${B.grn}10` : (isPrescribed ? B.g50 : B.w),
             borderRadius: 8, marginBottom: 6, border: `1px solid ${completed ? B.grn : B.g200}`,
         }}>
-            {/* 44 px tap area for the toggle (mobile-friendly), inner 28 px visual circle. */}
+            {/* 44 px tap area for the toggle (mobile-friendly), inner 28 px visual circle.
+                Vertical -8 cancels the row's 8 px vertical padding so row height is unchanged.
+                No horizontal negative margin — keeps the gap to "Set N" intact. */}
             <button
                 onClick={onToggle}
                 aria-label={`Toggle set ${rowNumber}${exerciseName ? ` of ${exerciseName}` : ''}`}
@@ -66,7 +68,7 @@ const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChan
                     width: 44, height: 44, padding: 0, flexShrink: 0,
                     background: 'transparent', border: 'none',
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    margin: '-8px -8px -8px 0',
+                    margin: '-8px 0',
                 }}
             >
                 <span style={{

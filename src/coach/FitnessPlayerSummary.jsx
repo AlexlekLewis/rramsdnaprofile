@@ -107,7 +107,13 @@ export default function FitnessPlayerSummary({ playerId }) {
                 if (cancelled) return;
                 if (logsResp.error) throw new Error(logsResp.error.message);
                 setLogs(logsResp.data || []);
-                setAwarded(awardsResp.data || []);
+                if (awardsResp.error) {
+                    // Don't fail the whole drill-in — coach still gets stats + logs.
+                    console.warn('FitnessPlayerSummary: badges fetch failed, rendering without:', awardsResp.error.message);
+                    setAwarded([]);
+                } else {
+                    setAwarded(awardsResp.data || []);
+                }
             } catch (e) {
                 if (!cancelled) setErr(e.message || 'Failed to load fitness summary');
             } finally {
