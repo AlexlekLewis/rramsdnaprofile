@@ -36,11 +36,16 @@ test.describe('1.1 — Login Form Validation', () => {
     await loginExpectError(page, 'xyznonexistentuser99', 'Password1!', 'Username not found');
   });
 
-  test('error clears when user types', async ({ page }) => {
+  test('error stays visible while user types corrections (does not vanish on keystroke)', async ({ page }) => {
+    // The error persists until the next submit attempt. Clearing on keystroke
+    // is intentionally NOT the behaviour — users were losing the message while
+    // they were still reading it. The error is replaced or cleared on the next
+    // submit, not while the user is mid-correction.
     await page.click(SEL.signInButton);
     await expect(page.locator('text=Please enter your username and password')).toBeVisible();
     await page.fill(SEL.loginUsernameInput, 'a');
-    await expect(page.locator('text=Please enter your username and password')).not.toBeVisible();
+    // Still visible — user can read it while typing.
+    await expect(page.locator('text=Please enter your username and password')).toBeVisible();
   });
 
   test('Enter key in password field triggers login', async ({ page }) => {

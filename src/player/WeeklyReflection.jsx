@@ -37,6 +37,8 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState(null);
+    // Surfaces a user-facing retry banner when the initial load fails.
+    const [loadError, setLoadError] = useState(null);
     // Catch-up: when set, the player is answering a missed past reflection.
     // Shape: { reflection, existingResponse, answers }
     const [catchUp, setCatchUp] = useState(null);
@@ -67,6 +69,7 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
     const refresh = async () => {
         if (!authUserId) return;
         setLoading(true);
+        setLoadError(null);
         try {
             const reflection = await loadCurrentReflection();
             setCurrentReflection(reflection);
@@ -81,7 +84,17 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
             // Pre-fill form if editing existing
             if (resp?.answers && typeof resp.answers === 'object') setAnswers(resp.answers);
             else setAnswers({});
-        } catch (e) { console.error('Weekly reflection load error:', e); }
+        } catch (e) {
+            console.error('Weekly reflection load error:', e);
+            const msg = (e?.message || '').toLowerCase();
+            if (msg.includes('failed to fetch') || msg.includes('network')) {
+                setLoadError('Connection lost — check your signal and try again.');
+            } else if (msg.includes('auth') || msg.includes('jwt') || msg.includes('401') || msg.includes('403')) {
+                setLoadError('Your session has expired. Sign out and sign back in.');
+            } else {
+                setLoadError("Couldn't load your reflection. Try again in a moment.");
+            }
+        }
         setLoading(false);
     };
 
@@ -530,8 +543,18 @@ export default function WeeklyReflection({ session, userProfile, playerId: playe
     return (
         <div style={{ fontFamily: F }}>
             {feedback && (
-                <div style={{ padding: '10px 16px', margin: '12px 16px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, fontFamily: F, background: feedback.type === 'ok' ? `${B.grn}15` : '#fee2e2', color: feedback.type === 'ok' ? B.grn : '#dc2626', border: `1px solid ${feedback.type === 'ok' ? `${B.grn}30` : '#fca5a5'}` }}>
+                <div role="status" style={{ padding: '10px 16px', margin: '12px 16px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, fontFamily: F, background: feedback.type === 'ok' ? `${B.grn}15` : '#fee2e2', color: feedback.type === 'ok' ? B.grn : '#dc2626', border: `1px solid ${feedback.type === 'ok' ? `${B.grn}30` : '#fca5a5'}` }}>
                     {feedback.text}
+                </div>
+            )}
+
+            {loadError && (
+                <div role="alert" style={{ padding: '10px 16px', margin: '12px 16px 0', borderRadius: 8, fontSize: 12, fontFamily: F, background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontWeight: 700 }}>⚠ {loadError}</span>
+                    <button onClick={refresh}
+                        style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, border: '1px solid #dc2626', background: B.w, color: '#dc2626', fontSize: 11, fontWeight: 800, fontFamily: F, cursor: 'pointer' }}>
+                        Try again
+                    </button>
                 </div>
             )}
 
