@@ -39,9 +39,9 @@ const CoachAvailability = React.lazy(() => import("./CoachAvailability"));
 // Default ON for admin-only screens (the role gate is the safety).
 // Set VITE_ENABLE_FITNESS_ADMIN="false" in Vercel to hide the tab without code changes.
 const FITNESS_ADMIN_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_ADMIN !== "false";
-// Default OFF in production until coaches have been onboarded; flip to "true" in
-// Vercel preview/prod env to expose the Schedule + Availability tabs.
-const COACH_SCHEDULER_ENABLED = import.meta.env.VITE_ENABLE_COACH_SCHEDULER === "true";
+// Default ON; set VITE_ENABLE_COACH_SCHEDULER="false" in Vercel to hide the
+// Schedule + Availability tabs as a kill-switch (no redeploy needed).
+const COACH_SCHEDULER_ENABLED = import.meta.env.VITE_ENABLE_COACH_SCHEDULER !== "false";
 
 // ═══ BOTTOM NAV BAR ═══
 const NAV_ITEMS_ADMIN_BASE = [
