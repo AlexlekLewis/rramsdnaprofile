@@ -13,7 +13,11 @@
 import React, { useEffect, useState } from 'react';
 import { B, F } from '../data/theme';
 import { supabase } from '../supabaseClient';
-import { saveExitVelocitySession } from '../db/performanceMetricsDb';
+import {
+    saveExitVelocitySession,
+    replaceExitVelocitySession,
+    METRIC_TYPES,
+} from '../db/performanceMetricsDb';
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -45,6 +49,7 @@ export default function ExitVelocityBulkUpload({ onClose }) {
     const [csv, setCsv] = useState('');
     const [date, setDate] = useState(todayStr());
     const [parsed, setParsed] = useState(null); // { matched: [...], unmatched: [...] }
+    const [previewing, setPreviewing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [result, setResult] = useState(null);
 
@@ -74,10 +79,11 @@ export default function ExitVelocityBulkUpload({ onClose }) {
         return m;
     }, [roster]);
 
-    const handlePreview = () => {
+    const handlePreview = async () => {
         setResult(null);
+        setPreviewing(true);
         const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        if (lines.length === 0) { setParsed(null); return; }
+        if (lines.length === 0) { setParsed(null); setPreviewing(false); return; }
 
         // Skip header if detected
         const firstCells = splitRow(lines[0]);
@@ -115,14 +121,46 @@ export default function ExitVelocityBulkUpload({ onClose }) {
 
             const best = Math.max(...validVals);
             const avg = +(validVals.reduce((s, v) => s + v, 0) / validVals.length).toFixed(1);
-            matched.push({ playerId: player.id, name: player.name, attempts, best, avg });
+            matched.push({ playerId: player.id, name: player.name, attempts, best, avg, willOverwrite: false });
+        }
+
+        // Flag rows that would overwrite existing data for this date
+        if (matched.length > 0) {
+            const playerIds = matched.map(m => m.playerId);
+            const { data: existing } = await supabase
+                .from('player_performance_metrics')
+                .select('player_id')
+                .eq('metric_type', METRIC_TYPES.EXIT_VELOCITY)
+                .eq('recorded_at', date)
+                .in('player_id', playerIds);
+            const overwriteSet = new Set((existing || []).map(r => r.player_id));
+            matched.forEach(m => { m.willOverwrite = overwriteSet.has(m.playerId); });
         }
 
         setParsed({ matched, unmatched });
+        setPreviewing(false);
     };
+
+    // If the user changes the test date after previewing, force them to re-preview so
+    // willOverwrite flags stay accurate.
+    useEffect(() => {
+        if (parsed) setParsed(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [date]);
 
     const handleSave = async () => {
         if (!parsed || parsed.matched.length === 0 || saving) return;
+
+        // Confirm if any rows would overwrite existing data
+        const overwriteCount = parsed.matched.filter(m => m.willOverwrite).length;
+        if (overwriteCount > 0) {
+            const ok = window.confirm(
+                `${overwriteCount} player${overwriteCount === 1 ? '' : 's'} already have a test for ${date}. ` +
+                `Continuing will REPLACE their existing values. Click Cancel to review first.`
+            );
+            if (!ok) return;
+        }
+
         setSaving(true);
         try {
             const { data: userResp } = await supabase.auth.getUser();
@@ -133,7 +171,8 @@ export default function ExitVelocityBulkUpload({ onClose }) {
             const errors = [];
             for (const row of parsed.matched) {
                 try {
-                    await saveExitVelocitySession({
+                    const fn = row.willOverwrite ? replaceExitVelocitySession : saveExitVelocitySession;
+                    await fn({
                         playerId: row.playerId,
                         recordedAt: date,
                         attempts: row.attempts,
@@ -200,9 +239,9 @@ export default function ExitVelocityBulkUpload({ onClose }) {
 
                 {/* Action: Preview */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                    <button onClick={handlePreview} disabled={!csv.trim() || rosterLoading}
-                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: csv.trim() && !rosterLoading ? B.bl : B.g200, color: B.w, fontSize: 12, fontWeight: 800, fontFamily: F, cursor: csv.trim() && !rosterLoading ? 'pointer' : 'default' }}>
-                        Preview matches
+                    <button onClick={handlePreview} disabled={!csv.trim() || rosterLoading || previewing}
+                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: csv.trim() && !rosterLoading && !previewing ? B.bl : B.g200, color: B.w, fontSize: 12, fontWeight: 800, fontFamily: F, cursor: csv.trim() && !rosterLoading && !previewing ? 'pointer' : 'default' }}>
+                        {previewing ? 'Checking…' : 'Preview matches'}
                     </button>
                 </div>
 
@@ -220,9 +259,17 @@ export default function ExitVelocityBulkUpload({ onClose }) {
                                 </div>
                                 <div style={{ maxHeight: 200, overflow: 'auto' }}>
                                     {parsed.matched.map((m, i) => (
-                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderBottom: `1px solid ${B.g100}`, fontSize: 11, color: B.g600, fontFamily: F }}>
-                                            <span style={{ fontWeight: 600, color: B.nvD }}>{m.name}</span>
-                                            <span>
+                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: `1px solid ${B.g100}`, fontSize: 11, color: B.g600, fontFamily: F }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                                                <span style={{ fontWeight: 600, color: B.nvD }}>{m.name}</span>
+                                                {m.willOverwrite && (
+                                                    <span title={`Will replace existing test for ${date}`}
+                                                        style={{ fontSize: 8, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: `${B.amb}20`, color: B.amb, fontFamily: F, letterSpacing: 0.4 }}>
+                                                        WILL REPLACE
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span style={{ flexShrink: 0 }}>
                                                 {m.attempts.map(a => a === null ? '—' : a).join(' · ')} km/h
                                                 {' · best '}<span style={{ fontWeight: 800, color: B.bl }}>{m.best}</span>
                                             </span>

@@ -156,6 +156,8 @@ export async function saveExitVelocitySession({
 /**
  * Replace an existing test session: delete all rows for the (player, metric, date),
  * then insert new ones. Use when a coach edits a previously saved session.
+ *
+ * Validates inputs BEFORE deleting so a blanked-out edit can't wipe existing data.
  */
 export async function replaceExitVelocitySession({
     playerId,
@@ -166,6 +168,16 @@ export async function replaceExitVelocitySession({
     recordedByRole = 'coach',
 }) {
     if (!playerId) throw new Error('replaceExitVelocitySession: playerId required');
+    if (!recordedBy) throw new Error('replaceExitVelocitySession: recordedBy required');
+
+    // Validate FIRST — refuse to delete an existing session unless the new payload is valid.
+    const validAttempts = (attempts || []).filter(v =>
+        v !== null && v !== '' && !isNaN(Number(v))
+    );
+    if (validAttempts.length === 0) {
+        throw new Error('No valid attempts to save — refusing to wipe existing session');
+    }
+
     const dateStr = recordedAt instanceof Date
         ? recordedAt.toISOString().slice(0, 10)
         : String(recordedAt).slice(0, 10);

@@ -120,15 +120,30 @@ export default function ExitVelocityCard({ playerId }) {
             return;
         }
 
+        // Block silent overwrites: if a session already exists for this date and we're
+        // not in edit mode, ask before replacing.
+        let useReplace = !!editingDate;
+        if (!editingDate) {
+            const existing = sessions.find(s => s.date === date);
+            if (existing) {
+                const ok = window.confirm(
+                    `A test already exists for ${fmtDate(date)} (best ${existing.best} km/h). ` +
+                    `Replace it with these new values? Click Cancel to leave it untouched.`
+                );
+                if (!ok) return;
+                useReplace = true;
+            }
+        }
+
         setSaving(true);
         try {
             const { data: userResp } = await supabase.auth.getUser();
             const userId = userResp?.user?.id;
             if (!userId) throw new Error('Not signed in');
 
-            if (editingDate) {
+            if (useReplace) {
                 await replaceExitVelocitySession({
-                    playerId, recordedAt: editingDate, attempts,
+                    playerId, recordedAt: editingDate || date, attempts,
                     notes: notes.trim() || null,
                     recordedBy: userId, recordedByRole: 'coach',
                 });
