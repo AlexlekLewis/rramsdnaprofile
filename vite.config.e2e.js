@@ -20,5 +20,7 @@ export default defineConfig({
     // Ensure DEV is true in the built output
     'import.meta.env.DEV': 'true',
     'import.meta.env.PROD': 'false',
+    // Enable feature-flagged screens so e2e can exercise them.
+    'import.meta.env.VITE_ENABLE_COACH_SCHEDULER': '"true"',
   },
 });

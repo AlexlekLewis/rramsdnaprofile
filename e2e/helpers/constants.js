@@ -54,6 +54,16 @@ export const SEL = {
   profilesNav: 'button:has-text("Profiles")',
   squadsNav: 'button:has-text("Squads")',
   fitnessNav: 'button:has-text("Fitness")',
+  scheduleNav: 'button:has-text("Schedule")',
+  availabilityNav: 'button:has-text("My Availability")',
+
+  // Coach scheduler (admin)
+  schedulerRoot: '[data-testid="coach-scheduler"]',
+  scheduleTodayBtn: '[data-testid="coach-scheduler"] button:has-text("Today")',
+  scheduleGapBanner: '[data-testid="coach-scheduler"]',
+
+  // Coach availability (self-service)
+  availabilityRoot: '[data-testid="coach-availability"]',
 };
 
 // ── Roles ──
