@@ -408,7 +408,12 @@ export default function AdminProfiles() {
                                     ) : (
                                         /* ═══ VIEW MODE ═══ */
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 800, color: B.bl, fontFamily: F, marginTop: 10, marginBottom: 6 }}>CONTACT</div>
+                                            {/* Exit Velocity drill-in — top of menu, primary input target for coaches */}
+                                            <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading exit velocity…</div>}>
+                                                <ExitVelocityCard playerId={p.dnaId || p.id} />
+                                            </React.Suspense>
+
+                                            <div style={{ fontSize: 10, fontWeight: 800, color: B.bl, fontFamily: F, marginTop: 16, marginBottom: 6 }}>CONTACT</div>
                                             <InfoRow label="Email" value={p.email} />
                                             <InfoRow label="Player Email" value={p.playerEmail} />
                                             <InfoRow label="Player Phone" value={p.playerPhone} />
@@ -460,11 +465,6 @@ export default function AdminProfiles() {
                                             {/* Week-by-week fitness history */}
                                             <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading week-by-week…</div>}>
                                                 <PlayerFitnessHistory playerId={p.dnaId || p.id} />
-                                            </React.Suspense>
-
-                                            {/* Exit Velocity drill-in */}
-                                            <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading exit velocity…</div>}>
-                                                <ExitVelocityCard playerId={p.dnaId || p.id} />
                                             </React.Suspense>
 
                                             {/* Action buttons at bottom of view mode */}
