@@ -7,6 +7,8 @@ import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortP
 import { getAge } from "../engine/ratingEngine";
 import HeadshotAvatar from "../shared/HeadshotAvatar";
 const FitnessPlayerSummary = React.lazy(() => import("./FitnessPlayerSummary"));
+const ExitVelocityCard = React.lazy(() => import("./ExitVelocityCard"));
+const ExitVelocityBulkUpload = React.lazy(() => import("./ExitVelocityBulkUpload"));
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
 
 const TABS = [
@@ -79,6 +81,7 @@ export default function AdminProfiles() {
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState(null);
     const [confirmAction, setConfirmAction] = useState(null);
+    const [showEvBulk, setShowEvBulk] = useState(false);
 
     const showFeedback = (type, text) => {
         setFeedback({ type, text });
@@ -278,7 +281,19 @@ export default function AdminProfiles() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, suburb, club..."
                     style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.g200}`, fontSize: 12, fontFamily: F, outline: 'none' }} />
+                <button onClick={() => setShowEvBulk(true)}
+                    title="Bulk upload Exit Velocity from a sheet"
+                    style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${B.bl}`, background: `${B.bl}08`, color: B.bl, fontSize: 11, fontWeight: 700, fontFamily: F, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Bulk EV
+                </button>
             </div>
+
+            {/* Bulk Exit Velocity upload modal */}
+            {showEvBulk && (
+                <React.Suspense fallback={null}>
+                    <ExitVelocityBulkUpload onClose={() => setShowEvBulk(false)} />
+                </React.Suspense>
+            )}
 
             {/* Count */}
             <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginBottom: 6, padding: '0 4px' }}>{filtered.length} players</div>
@@ -439,6 +454,11 @@ export default function AdminProfiles() {
                                             {/* Fitness drill-in (Phase 5b) */}
                                             <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading fitness…</div>}>
                                                 <FitnessPlayerSummary playerId={p.dnaId || p.id} />
+                                            </React.Suspense>
+
+                                            {/* Exit Velocity drill-in */}
+                                            <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading exit velocity…</div>}>
+                                                <ExitVelocityCard playerId={p.dnaId || p.id} />
                                             </React.Suspense>
 
                                             {/* Action buttons at bottom of view mode */}
