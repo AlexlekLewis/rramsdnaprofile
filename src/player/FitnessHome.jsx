@@ -19,6 +19,13 @@ import {
     computeHomeStatusCopy,
     BADGE_BY_KEY,
 } from '../data/fitnessBadges';
+import {
+    FITNESS_VIDEO_URL,
+    FULL_VIDEO_SEGMENT,
+    FAQ_SEGMENTS,
+} from '../data/fitnessVideoSegments';
+import VideoModal from '../shared/VideoModal';
+import DemoButton from '../shared/DemoButton';
 import FitnessSession from './FitnessSession';
 
 const TabButton = ({ active, onClick, children, badge }) => (
@@ -164,6 +171,7 @@ export default function FitnessHome({ session, userProfile, playerId }) {
     const [awarded, setAwarded] = useState([]);
     const [tab, setTab] = useState('this'); // 'this' | 'past' | 'badges'
     const [openSession, setOpenSession] = useState(null); // { block, weekNumber }
+    const [openDemo, setOpenDemo] = useState(null); // { title, start, end, note? }
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [notEnrolled, setNotEnrolled] = useState(false);
@@ -303,6 +311,21 @@ export default function FitnessHome({ session, userProfile, playerId }) {
                 {program?.name && (
                     <div style={{ fontSize: 10, marginTop: 10, opacity: 0.7, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase' }}>{program.name}</div>
                 )}
+                <div style={{ marginTop: 14 }}>
+                    <DemoButton
+                        variant="primary"
+                        label="Watch instructional video"
+                        onClick={() => setOpenDemo({
+                            title: 'Full instructional video',
+                            start: FULL_VIDEO_SEGMENT.start,
+                            end: FULL_VIDEO_SEGMENT.end,
+                            note: 'Walks through the warm-up, every exercise across the three days, the stretching block, and FAQs.',
+                        })}
+                    />
+                    <div style={{ fontSize: 11, marginTop: 10, opacity: 0.85, lineHeight: 1.4 }}>
+                        How demos work: every warm-up movement, exercise, and FAQ has its own <strong>Demo</strong> button. Tap one and the video opens straight to that section, then pauses when it ends — you don't need to scrub.
+                    </div>
+                </div>
             </div>
 
             <div style={{ display: 'flex', borderBottom: `1px solid ${B.g200}`, marginBottom: 16 }}>
@@ -375,6 +398,43 @@ export default function FitnessHome({ session, userProfile, playerId }) {
                     {badgeStates.map(b => <BadgeCard key={b.key} state={b} />)}
                 </div>
             )}
+
+            {/* Quick FAQ clips from the instructional video */}
+            <div style={{ marginTop: 28 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: B.g600, fontFamily: F, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+                    Common questions
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {FAQ_SEGMENTS.map(faq => (
+                        <button
+                            key={faq.id}
+                            onClick={() => setOpenDemo({ title: faq.label, start: faq.start, end: faq.end })}
+                            style={{
+                                ...sCard, padding: '12px 14px', marginBottom: 0, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                gap: 10, textAlign: 'left', fontFamily: F,
+                                border: `1px solid ${B.g200}`,
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                                <span aria-hidden="true" style={{ color: B.bl, fontSize: 14, lineHeight: 1, flexShrink: 0 }}>▶</span>
+                                <span style={{ fontSize: 12, color: B.nvD, fontWeight: 700 }}>{faq.label}</span>
+                            </div>
+                            <span style={{ fontSize: 18, color: B.bl, flexShrink: 0 }}>›</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <VideoModal
+                open={!!openDemo}
+                onClose={() => setOpenDemo(null)}
+                videoUrl={FITNESS_VIDEO_URL}
+                startSeconds={openDemo?.start || 0}
+                endSeconds={openDemo?.end ?? null}
+                title={openDemo?.title}
+                note={openDemo?.note}
+            />
         </div>
     );
 }
