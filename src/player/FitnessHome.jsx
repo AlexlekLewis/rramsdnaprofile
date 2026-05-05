@@ -322,6 +322,9 @@ export default function FitnessHome({ session, userProfile, playerId }) {
                             note: 'Walks through the warm-up, every exercise across the three days, the stretching block, and FAQs.',
                         })}
                     />
+                    <div style={{ fontSize: 11, marginTop: 10, opacity: 0.85, lineHeight: 1.4 }}>
+                        How demos work: every warm-up movement, exercise, and FAQ has its own <strong>Demo</strong> button. Tap one and the video opens straight to that section, then pauses when it ends — you don't need to scrub.
+                    </div>
                 </div>
             </div>
 

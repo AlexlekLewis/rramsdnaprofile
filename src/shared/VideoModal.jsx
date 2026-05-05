@@ -185,6 +185,11 @@ export default function VideoModal({
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 9, fontWeight: 800, opacity: 0.7, letterSpacing: 0.5, textTransform: 'uppercase' }}>Demo</div>
                         <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, lineHeight: 1.25 }}>{title || 'Instructional video'}</div>
+                        {endSeconds != null && (
+                            <div style={{ fontSize: 10, opacity: 0.75, marginTop: 4, lineHeight: 1.3 }}>
+                                Plays just this section, then pauses.
+                            </div>
+                        )}
                     </div>
                     <button onClick={onClose} style={closeBtnStyle} aria-label="Close demo">×</button>
                 </div>
