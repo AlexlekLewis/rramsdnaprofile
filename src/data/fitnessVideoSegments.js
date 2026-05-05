@@ -12,14 +12,14 @@
 // any timestamps that shifted. Adding new exercises = add a new entry to
 // EXERCISE_DEMOS keyed by the database exercise id.
 
-// Empty string until the MP4 is uploaded to Supabase Storage.
+// Public URL of the MP4 in Supabase Storage (videos bucket, public-read).
 // Buttons render either way; the modal shows a friendly "video being
 // prepared" message when the URL is empty.
-export const FITNESS_VIDEO_URL = '';
+export const FITNESS_VIDEO_URL = 'https://pudldzgmluwoocwxtzhw.supabase.co/storage/v1/object/public/videos/fitness-program/2026-royals-home-fitness-v1.mp4';
 
-// Approximate file length in seconds — used as the end of the final FAQ
-// segment when nothing comes after it. Refine once the real file is in.
-export const FITNESS_VIDEO_TOTAL_SECONDS = 930;
+// Real file length in seconds, taken from avmediainfo on the source MOV.
+// Used as the end of the final FAQ segment.
+export const FITNESS_VIDEO_TOTAL_SECONDS = 942;
 
 // Per-exercise demo windows, keyed by the exercise.id stored in the
 // fitness_programs.activation_block / fitness_program_blocks.exercises
