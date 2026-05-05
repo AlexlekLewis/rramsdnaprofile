@@ -11,6 +11,12 @@ import {
     saveSessionLog,
     loadSessionLogForBlockWeek,
 } from '../db/fitnessDb';
+import {
+    FITNESS_VIDEO_URL,
+    getDemoForExercise,
+} from '../data/fitnessVideoSegments';
+import VideoModal from '../shared/VideoModal';
+import DemoButton from '../shared/DemoButton';
 
 const SET_ROWS_DEFAULT = 6; // Spreadsheet shows 6 numbered rows.
 
@@ -99,10 +105,11 @@ const SetRow = React.memo(function SetRow({ rowNumber, set, onToggle, onRepsChan
     );
 });
 
-const ExerciseCard = React.memo(function ExerciseCard({ exercise, exLog, onToggleSet, onRepsChange }) {
+const ExerciseCard = React.memo(function ExerciseCard({ exercise, exLog, onToggleSet, onRepsChange, onOpenDemo }) {
     const prescribedSets = Number(exercise.prescribed_sets) || 4;
     const totalRows = Math.max(prescribedSets, SET_ROWS_DEFAULT);
     const sets = exLog?.sets || [];
+    const demo = getDemoForExercise(exercise.id);
     return (
         <div style={{ ...sCard, padding: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 }}>
@@ -112,6 +119,21 @@ const ExerciseCard = React.memo(function ExerciseCard({ exercise, exLog, onToggl
                 </div>
                 <Pill color={B.pk}>{exercise.prescription || `${prescribedSets} sets`}</Pill>
             </div>
+            {demo && (
+                <div style={{ marginBottom: 10 }}>
+                    <DemoButton
+                        compact
+                        label="Watch demo"
+                        ariaLabel={`Watch demo for ${exercise.name}`}
+                        onClick={() => onOpenDemo?.({
+                            title: exercise.name,
+                            start: demo.start,
+                            end: demo.end,
+                            note: demo.demoNote,
+                        })}
+                    />
+                </div>
+            )}
             {exercise.tip && (
                 <div style={{
                     background: `${B.amb}10`, border: `1px solid ${B.amb}40`, borderRadius: 8,
@@ -179,6 +201,7 @@ export default function FitnessSession({
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState(null);
     const [loadingExisting, setLoadingExisting] = useState(true);
+    const [openDemo, setOpenDemo] = useState(null); // { title, start, end, note? }
 
     // Load existing log on mount only — keyed strictly by the slot identity
     // (enrolment + block + week). Intentionally NOT depending on `exercises`
@@ -346,30 +369,52 @@ export default function FitnessSession({
                     <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F, marginBottom: 8, letterSpacing: 0.4 }}>ACTIVATION (warm-up)</div>
                     {activation.map(a => {
                         const done = !!activationDone[a.id];
+                        const aDemo = getDemoForExercise(a.id);
                         return (
-                            <button
+                            <div
                                 key={a.id}
-                                onClick={() => toggleActivation(a.id)}
                                 style={{
-                                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                                    padding: '10px 12px', marginBottom: 6, borderRadius: 8,
-                                    background: done ? `${B.grn}12` : B.g50,
-                                    border: `1px solid ${done ? B.grn : B.g200}`,
-                                    cursor: 'pointer', fontFamily: F, textAlign: 'left',
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    marginBottom: 6,
                                 }}
                             >
-                                <div style={{
-                                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                                    background: done ? B.grn : B.w,
-                                    border: `2px solid ${done ? B.grn : B.g200}`,
-                                    color: B.w, fontSize: 12, fontWeight: 800,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}>{done ? '✓' : ''}</div>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD }}>{a.name}</div>
-                                    <div style={{ fontSize: 10, color: B.g600 }}>{a.prescription}</div>
-                                </div>
-                            </button>
+                                <button
+                                    onClick={() => toggleActivation(a.id)}
+                                    style={{
+                                        flex: 1, display: 'flex', alignItems: 'center', gap: 10,
+                                        padding: '10px 12px', borderRadius: 8,
+                                        background: done ? `${B.grn}12` : B.g50,
+                                        border: `1px solid ${done ? B.grn : B.g200}`,
+                                        cursor: 'pointer', fontFamily: F, textAlign: 'left',
+                                        minWidth: 0,
+                                    }}
+                                >
+                                    <div style={{
+                                        width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                                        background: done ? B.grn : B.w,
+                                        border: `2px solid ${done ? B.grn : B.g200}`,
+                                        color: B.w, fontSize: 12, fontWeight: 800,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>{done ? '✓' : ''}</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: B.nvD }}>{a.name}</div>
+                                        <div style={{ fontSize: 10, color: B.g600 }}>{a.prescription}</div>
+                                    </div>
+                                </button>
+                                {aDemo && (
+                                    <DemoButton
+                                        compact
+                                        label="Demo"
+                                        ariaLabel={`Watch demo for ${a.name}`}
+                                        onClick={() => setOpenDemo({
+                                            title: a.name,
+                                            start: aDemo.start,
+                                            end: aDemo.end,
+                                            note: aDemo.demoNote,
+                                        })}
+                                    />
+                                )}
+                            </div>
                         );
                     })}
                 </div>
@@ -391,6 +436,7 @@ export default function FitnessSession({
                         exLog={exLog}
                         onToggleSet={toggleSet}
                         onRepsChange={setReps}
+                        onOpenDemo={setOpenDemo}
                     />
                 );
             })}
@@ -431,6 +477,16 @@ export default function FitnessSession({
                     }}
                 >{saving ? 'Saving…' : (existingLog ? 'Update session' : 'Save session')}</button>
             </div>
+
+            <VideoModal
+                open={!!openDemo}
+                onClose={() => setOpenDemo(null)}
+                videoUrl={FITNESS_VIDEO_URL}
+                startSeconds={openDemo?.start || 0}
+                endSeconds={openDemo?.end ?? null}
+                title={openDemo?.title}
+                note={openDemo?.note}
+            />
         </div>
     );
 }

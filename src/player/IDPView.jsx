@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { loadGoalsForPlayer, addGoal, updateGoalProgress, updateGoal, completeGoal, loadFocusAreas, loadNotes, addNote } from "../db/idpDb";
 import { loadCoachAssessment, loadSelfRatings, buildAssessmentSummary } from "../db/assessmentDb";
+import { loadSessionsFor, METRIC_TYPES } from "../db/performanceMetricsDb";
 import { B, F, sCard } from "../data/theme";
 
 const GOAL_CATEGORIES = [
@@ -22,6 +23,9 @@ export default function IDPView({ session, userProfile, playerId }) {
     const [loading, setLoading] = useState(true);
     const [assessmentSummary, setAssessmentSummary] = useState([]);
     const [assessmentLoaded, setAssessmentLoaded] = useState(false);
+    const [evSessions, setEvSessions] = useState([]);
+    const [evLoaded, setEvLoaded] = useState(false);
+    const [showEv, setShowEv] = useState(true);
 
     const [newGoal, setNewGoal] = useState("");
     const [newGoalCategory, setNewGoalCategory] = useState("technical");
@@ -73,6 +77,14 @@ export default function IDPView({ session, userProfile, playerId }) {
             console.warn("Assessment load failed:", err.message);
             setAssessmentLoaded(true);
         });
+    }, [playerId]);
+
+    // Load Exit Velocity sessions (read-only for player)
+    useEffect(() => {
+        if (!playerId) return;
+        loadSessionsFor(playerId, METRIC_TYPES.EXIT_VELOCITY)
+            .then(s => { setEvSessions(s || []); setEvLoaded(true); })
+            .catch(err => { console.warn("Exit velocity load failed:", err.message); setEvLoaded(true); });
     }, [playerId]);
 
     const showFeedback = (type, text, duration = 3000) => {
@@ -315,6 +327,104 @@ export default function IDPView({ session, userProfile, playerId }) {
                     <div style={{ fontSize: 11, color: B.g400, fontFamily: F, lineHeight: 1.5 }}>
                         Your coach assessment results will appear here after assessment week. In the meantime, set your goals below.
                     </div>
+                </div>
+            )}
+
+            {/* ═══ EXIT VELOCITY (read-only) ═══ */}
+            {evLoaded && (
+                <div style={{ ...sCard, padding: 20 }}>
+                    <SectionH
+                        title="My Exit Velocity"
+                        subtitle={evSessions.length > 0 ? "How hard you hit the ball — measured by radar" : "Coach will record this at training"}
+                        toggle={evSessions.length > 0 ? () => setShowEv(!showEv) : null}
+                        isOpen={showEv}
+                    />
+
+                    {evSessions.length === 0 ? (
+                        <div style={{ padding: '12px 0', fontSize: 12, color: B.g500, fontFamily: F, lineHeight: 1.5 }}>
+                            Your coach will record three shots and your best speed shows up here. We'll re-test at the end of the program so you can see your improvement.
+                        </div>
+                    ) : showEv ? (
+                        <>
+                            {/* Latest session — headline */}
+                            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                                <div style={{
+                                    width: 64, height: 64, borderRadius: '50%',
+                                    background: `linear-gradient(135deg, ${B.bl}, ${B.prp})`,
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0,
+                                }}>
+                                    <span style={{ fontSize: 18, fontWeight: 800, color: B.w, fontFamily: F, lineHeight: 1 }}>{evSessions[0].best}</span>
+                                    <span style={{ fontSize: 8, fontWeight: 700, color: B.w, fontFamily: F, marginTop: 2 }}>KM/H</span>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 800, color: B.nvD, fontFamily: F }}>Best of {evSessions[0].attempts.length}</div>
+                                    <div style={{ fontSize: 10, color: B.g400, fontFamily: F, marginTop: 2 }}>
+                                        {new Date(evSessions[0].date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: B.g600, fontFamily: F, marginTop: 4 }}>
+                                        Average: <span style={{ fontWeight: 700, color: B.prp }}>{evSessions[0].avg} km/h</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Attempts breakdown */}
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                                {evSessions[0].attempts.map((a, i) => (
+                                    <div key={i} style={{ flex: 1, padding: 8, background: B.g50, borderRadius: 6, textAlign: 'center' }}>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD, fontFamily: F, lineHeight: 1.1 }}>{a.value}</div>
+                                        <div style={{ fontSize: 8, fontWeight: 700, color: B.g400, fontFamily: F, marginTop: 2 }}>ATTEMPT {a.number || (i + 1)}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Improvement: compare latest vs first session if more than one */}
+                            {evSessions.length > 1 && (() => {
+                                const first = evSessions[evSessions.length - 1];
+                                const latest = evSessions[0];
+                                const delta = +(latest.best - first.best).toFixed(1);
+                                const positive = delta > 0;
+                                const sign = positive ? '+' : '';
+                                return (
+                                    <div style={{
+                                        padding: 12, borderRadius: 8,
+                                        background: positive ? `${B.grn}08` : `${B.amb}08`,
+                                        border: `1px solid ${positive ? B.grn : B.amb}25`,
+                                        marginBottom: 12,
+                                    }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: positive ? B.grn : B.amb, fontFamily: F, marginBottom: 4 }}>
+                                            {positive ? 'Improvement' : 'Change'} since baseline
+                                        </div>
+                                        <div style={{ fontSize: 11, color: B.g600, fontFamily: F, lineHeight: 1.5 }}>
+                                            Your best went from <span style={{ fontWeight: 700 }}>{first.best} km/h</span> on {new Date(first.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} to <span style={{ fontWeight: 700 }}>{latest.best} km/h</span>{' '}
+                                            (<span style={{ fontWeight: 800, color: positive ? B.grn : B.amb }}>{sign}{delta} km/h</span>).
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* History list */}
+                            {evSessions.length > 1 && (
+                                <div>
+                                    <div style={{ fontSize: 9, fontWeight: 800, color: B.g400, fontFamily: F, marginBottom: 6, letterSpacing: 0.4 }}>HISTORY</div>
+                                    {evSessions.map(s => (
+                                        <div key={s.date} style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            padding: '6px 0', borderBottom: `1px solid ${B.g100}`,
+                                            fontSize: 11, color: B.g600, fontFamily: F,
+                                        }}>
+                                            <span style={{ fontWeight: 600, color: B.nvD }}>
+                                                {new Date(s.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                            <span>
+                                                Best <span style={{ fontWeight: 800, color: B.bl }}>{s.best}</span> · Avg {s.avg} km/h
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    ) : null}
                 </div>
             )}
 
