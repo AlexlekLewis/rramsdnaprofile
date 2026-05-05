@@ -138,18 +138,27 @@ export default function VideoModal({
         return () => window.removeEventListener('keydown', onKey);
     }, [open, onClose]);
 
-    // Pause when the video reaches the end of the segment. Some seek/scrub
-    // operations can briefly report a time past the boundary, so we only
-    // act on the first crossing per open.
-    const onTimeUpdate = () => {
-        if (reachedEnd) return;
+    // Pause whenever the video crosses the segment boundary. We check on
+    // every timeupdate AND poll every 200 ms — onTimeUpdate alone has
+    // betrayed us in the wild (user resumes via native controls after the
+    // overlay shows; some browsers throttle timeupdate). The polling
+    // backup catches every escape route — if the user ever gets past
+    // endSeconds while playing, we yank them back within 200 ms.
+    const enforceBoundary = () => {
         const v = videoRef.current;
         if (!v || endSeconds == null) return;
-        if (v.currentTime >= endSeconds) {
+        if (v.currentTime >= endSeconds && !v.paused) {
             v.pause();
             setReachedEnd(true);
         }
     };
+
+    useEffect(() => {
+        if (!open || endSeconds == null) return;
+        const id = setInterval(enforceBoundary, 200);
+        return () => clearInterval(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, endSeconds]);
 
     const replay = () => {
         const v = videoRef.current;
@@ -190,7 +199,9 @@ export default function VideoModal({
                                 controls
                                 playsInline
                                 preload="metadata"
-                                onTimeUpdate={onTimeUpdate}
+                                onTimeUpdate={enforceBoundary}
+                                onPlay={enforceBoundary}
+                                onSeeked={enforceBoundary}
                             />
                             {reachedEnd && (
                                 <div style={overlayCardStyle}>
