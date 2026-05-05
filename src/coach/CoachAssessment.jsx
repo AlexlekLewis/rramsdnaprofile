@@ -32,6 +32,8 @@ const AdminDashboard = React.lazy(() => import("./AdminDashboard"));
 const AdminProfiles = React.lazy(() => import("./AdminProfiles"));
 const SquadRoster = React.lazy(() => import("./SquadRoster"));
 const FitnessProgramAdmin = React.lazy(() => import("./FitnessProgramAdmin"));
+const PlayerFitnessHistory = React.lazy(() => import("./PlayerFitnessHistory"));
+const FitnessPlayerSummary = React.lazy(() => import("./FitnessPlayerSummary"));
 
 // ═══ FEATURE FLAGS ═══
 // Default ON for admin-only screens (the role gate is the safety).
@@ -454,6 +456,35 @@ export default function CoachAssessment() {
         </div>
     );
 
+    // ═══ PER-PLAYER FITNESS DETAIL (coach + admin) ═══
+    if (cView === "playerFitness" && selP) {
+        const p = players.find(x => x.id === selP) || players.find(x => x.dnaId === selP);
+        const playerName = p?.name || 'Player';
+        return (
+            <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60, fontFamily: F }}>
+                <Hdr label="FITNESS HISTORY" onLogoClick={signOut} />
+                <div style={{ padding: '4px 12px', background: B.g100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button onClick={() => { setCView("list"); goTop(); }}
+                        style={{ background: 'none', border: 'none', color: B.bl, fontSize: 12, fontFamily: F, cursor: 'pointer', fontWeight: 700, padding: '4px 0' }}>
+                        ← Back to Roster
+                    </button>
+                    <div style={{ fontSize: 9, color: B.g400, fontFamily: F }}>{session?.user?.email}</div>
+                </div>
+                <div style={{ padding: 12, ...getDkWrap() }}>
+                    <div style={{ ...sCard, padding: 14, marginBottom: 12 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: B.nvD, fontFamily: F }}>{playerName}</div>
+                        <div style={{ fontSize: 11, color: B.g600, fontFamily: F, marginTop: 2 }}>Fitness program record</div>
+                    </div>
+                    <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading fitness…</div>}>
+                        <FitnessPlayerSummary playerId={p?.dnaId || selP} />
+                        <PlayerFitnessHistory playerId={p?.dnaId || selP} />
+                    </Suspense>
+                </div>
+                <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} />
+            </div>
+        );
+    }
+
     // ═══ FITNESS PROGRAM ADMIN ═══
     if (cView === "fitness" && isAdmin && FITNESS_ADMIN_ENABLED) return (
         <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
@@ -575,9 +606,18 @@ export default function CoachAssessment() {
                                     </div>
                                 );
                             })()}
-                            <div style={{ fontSize: 9, color: B.g400, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                <span>{p.grades?.length || 0} competition level(s) • {hasCd ? "Coach assessed" : hasSelf ? "Self-assessed" : "Awaiting"}{dn?.provisional && hasSelf ? " (provisional)" : ""}</span>
-                                {isAdmin && <button onClick={(e) => handleReopenProfile(e, p.id, p.name)} style={{ padding: "2px 8px", borderRadius: 4, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 8, fontWeight: 700, color: B.g400, cursor: "pointer", fontFamily: F, textTransform: "uppercase", letterSpacing: .3 }}>Reopen</button>}
+                            <div style={{ fontSize: 9, color: B.g400, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                                <span style={{ flex: 1, minWidth: 0 }}>{p.grades?.length || 0} competition level(s) • {hasCd ? "Coach assessed" : hasSelf ? "Self-assessed" : "Awaiting"}{dn?.provisional && hasSelf ? " (provisional)" : ""}</span>
+                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setSelP(p.id); setCView("playerFitness"); goTop(); }}
+                                        style={{ padding: "2px 8px", borderRadius: 4, border: `1px solid ${B.bl}40`, background: `${B.bl}10`, fontSize: 8, fontWeight: 700, color: B.bl, cursor: "pointer", fontFamily: F, textTransform: "uppercase", letterSpacing: .3 }}
+                                        title={`View ${p.name}'s fitness history`}
+                                    >
+                                        🏋 Fitness
+                                    </button>
+                                    {isAdmin && <button onClick={(e) => handleReopenProfile(e, p.id, p.name)} style={{ padding: "2px 8px", borderRadius: 4, border: `1px solid ${B.g200}`, background: "transparent", fontSize: 8, fontWeight: 700, color: B.g400, cursor: "pointer", fontFamily: F, textTransform: "uppercase", letterSpacing: .3 }}>Reopen</button>}
+                                </div>
                             </div>
                         </div>
                     </div>);

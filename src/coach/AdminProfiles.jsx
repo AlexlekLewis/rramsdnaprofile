@@ -7,6 +7,7 @@ import { updatePlayer, archivePlayer, restorePlayer, deletePlayer, deleteCohortP
 import { getAge } from "../engine/ratingEngine";
 import HeadshotAvatar from "../shared/HeadshotAvatar";
 const FitnessPlayerSummary = React.lazy(() => import("./FitnessPlayerSummary"));
+const PlayerFitnessHistory = React.lazy(() => import("./PlayerFitnessHistory"));
 const ExitVelocityCard = React.lazy(() => import("./ExitVelocityCard"));
 const ExitVelocityBulkUpload = React.lazy(() => import("./ExitVelocityBulkUpload"));
 // Note: bulkArchivePlayers, bulkDeletePlayers removed — bulk actions replaced with per-profile confirmations
@@ -454,6 +455,11 @@ export default function AdminProfiles() {
                                             {/* Fitness drill-in (Phase 5b) */}
                                             <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading fitness…</div>}>
                                                 <FitnessPlayerSummary playerId={p.dnaId || p.id} />
+                                            </React.Suspense>
+
+                                            {/* Week-by-week fitness history */}
+                                            <React.Suspense fallback={<div style={{ padding: '12px 0', fontSize: 11, color: B.g400, fontFamily: F }}>Loading week-by-week…</div>}>
+                                                <PlayerFitnessHistory playerId={p.dnaId || p.id} />
                                             </React.Suspense>
 
                                             {/* Exit Velocity drill-in */}
