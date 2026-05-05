@@ -29,24 +29,37 @@ import { useHashRoute } from '../admin/useHashRoute';
 // Lazy-load the legacy admin surface so the shell entry chunk stays small.
 const CoachAssessment = React.lazy(() => import('./CoachAssessment'));
 
-// Sidebar items registered for Phase 1. As phases land, this array grows.
-// Each item: { id, label, icon, hashPath, render }
+// Feature flags — must mirror the strings in CoachAssessment.jsx so the shell
+// hides routes the underlying component would refuse to render.
+const FITNESS_ADMIN_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_ADMIN !== 'false';
+const COACH_SCHEDULER_ENABLED = import.meta.env.VITE_ENABLE_COACH_SCHEDULER !== 'false';
+
+// Icon set — kept simple and inline so the shell entry chunk stays small.
+const Icon = {
+    Dashboard: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>,
+    Roster: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
+    Profiles: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
+    Squads: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>,
+    Fitness: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 6.5l11 11" /><path d="M21 21l-1-1" /><path d="M3 3l1 1" /><path d="M18 22l4-4" /><path d="M2 6l4-4" /><path d="M3 10l7-7" /><path d="M14 21l7-7" /></svg>,
+    Schedule: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>,
+    Accounts: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /><path d="M22 11h-6" /><path d="M19 8v6" /></svg>,
+};
+
+// Sidebar items: each maps a hash route to the corresponding cView value
+// inside CoachAssessment. Phase 2 reuses CoachAssessment unchanged — the shell
+// drives `forceCView` from the active route. Phases 4-5 will replace items
+// with their own components for richer list-detail layouts.
 const SIDEBAR_ITEMS = [
-    {
-        id: 'dashboard',
-        label: 'Dashboard',
-        hashPath: '/dashboard',
-        icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-            </svg>
-        ),
-        render: () => <CoachAssessment inAdminShell />,
-    },
+    { id: 'dashboard', label: 'Dashboard', hashPath: '/dashboard', cView: 'admin', icon: Icon.Dashboard },
+    { id: 'roster', label: 'Roster', hashPath: '/roster', cView: 'list', icon: Icon.Roster },
+    { id: 'profiles', label: 'Profiles', hashPath: '/profiles', cView: 'profiles', icon: Icon.Profiles },
+    { id: 'squads', label: 'Squads', hashPath: '/squads', cView: 'squads', icon: Icon.Squads },
+    ...(FITNESS_ADMIN_ENABLED ? [{ id: 'fitness', label: 'Fitness', hashPath: '/fitness', cView: 'fitness', icon: Icon.Fitness }] : []),
+    ...(COACH_SCHEDULER_ENABLED ? [{ id: 'schedule', label: 'Schedule', hashPath: '/schedule', cView: 'schedule', icon: Icon.Schedule }] : []),
+    { id: 'accounts', label: 'Accounts', hashPath: '/accounts', cView: 'accounts', icon: Icon.Accounts },
 ];
+
+const DEFAULT_HASH = '/dashboard';
 
 // Width of the persistent rail on wide viewports.
 const RAIL_WIDTH = 240;
@@ -196,11 +209,13 @@ export default function AdminShell({ userProfile, onSignOut }) {
     const { path, navigate } = useHashRoute();
     const [drawerOpen, setDrawerOpen] = useState(false);
 
-    // If nothing in the URL hash, default to /dashboard so the legacy view shows.
+    // If nothing in the URL hash, default to the dashboard route so the
+    // KPI overview is the admin's landing page (instead of the roster default
+    // baked into CoachAssessment's session state).
     useEffect(() => {
         if (typeof window === 'undefined') return;
         if (!window.location.hash || window.location.hash === '#') {
-            navigate('/dashboard');
+            navigate(DEFAULT_HASH);
         }
     }, [navigate]);
 
@@ -219,6 +234,11 @@ export default function AdminShell({ userProfile, onSignOut }) {
         () => SIDEBAR_ITEMS.find(i => i.hashPath === path) || SIDEBAR_ITEMS[0],
         [path]
     );
+
+    // Render CoachAssessment ONCE and drive its internal cView via prop on
+    // every route change. Mounting a new instance per item would lose roster
+    // selection, scroll position, and any in-flight assessment state.
+    const renderActive = () => <CoachAssessment inAdminShell forceCView={activeItem.cView} />;
 
     const sidebarPanel = (
         <div style={{
@@ -281,7 +301,7 @@ export default function AdminShell({ userProfile, onSignOut }) {
                             Loading…
                         </div>
                     }>
-                        {activeItem.render()}
+                        {renderActive()}
                     </Suspense>
                 </ErrorBoundary>
             </main>
