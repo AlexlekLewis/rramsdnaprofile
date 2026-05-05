@@ -32,11 +32,16 @@ const AdminDashboard = React.lazy(() => import("./AdminDashboard"));
 const AdminProfiles = React.lazy(() => import("./AdminProfiles"));
 const SquadRoster = React.lazy(() => import("./SquadRoster"));
 const FitnessProgramAdmin = React.lazy(() => import("./FitnessProgramAdmin"));
+const CoachScheduler = React.lazy(() => import("./CoachScheduler"));
+const CoachAvailability = React.lazy(() => import("./CoachAvailability"));
 
 // ═══ FEATURE FLAGS ═══
 // Default ON for admin-only screens (the role gate is the safety).
 // Set VITE_ENABLE_FITNESS_ADMIN="false" in Vercel to hide the tab without code changes.
 const FITNESS_ADMIN_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_ADMIN !== "false";
+// Default OFF in production until coaches have been onboarded; flip to "true" in
+// Vercel preview/prod env to expose the Schedule + Availability tabs.
+const COACH_SCHEDULER_ENABLED = import.meta.env.VITE_ENABLE_COACH_SCHEDULER === "true";
 
 // ═══ BOTTOM NAV BAR ═══
 const NAV_ITEMS_ADMIN_BASE = [
@@ -46,10 +51,17 @@ const NAV_ITEMS_ADMIN_BASE = [
     { id: 'squads', label: 'Squads', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> },
 ];
 const NAV_ITEM_FITNESS = { id: 'fitness', label: 'Fitness', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 6.5l11 11"/><path d="M21 21l-1-1"/><path d="M3 3l1 1"/><path d="M18 22l4-4"/><path d="M2 6l4-4"/><path d="M3 10l7-7"/><path d="M14 21l7-7"/></svg> };
-const NAV_ITEMS_ADMIN = FITNESS_ADMIN_ENABLED
-    ? [...NAV_ITEMS_ADMIN_BASE, NAV_ITEM_FITNESS]
-    : NAV_ITEMS_ADMIN_BASE;
-const NAV_ITEMS_COACH = [NAV_ITEMS_ADMIN_BASE[0]]; // Coach only sees Roster
+const NAV_ITEM_SCHEDULE = { id: 'schedule', label: 'Schedule', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> };
+const NAV_ITEM_AVAILABILITY = { id: 'availability', label: 'My Availability', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg> };
+const NAV_ITEMS_ADMIN = [
+    ...NAV_ITEMS_ADMIN_BASE,
+    ...(FITNESS_ADMIN_ENABLED ? [NAV_ITEM_FITNESS] : []),
+    ...(COACH_SCHEDULER_ENABLED ? [NAV_ITEM_SCHEDULE] : []),
+];
+const NAV_ITEMS_COACH = [
+    NAV_ITEMS_ADMIN_BASE[0],
+    ...(COACH_SCHEDULER_ENABLED ? [NAV_ITEM_AVAILABILITY] : []),
+];
 
 const CoachNavBar = React.memo(({ active, onNavigate, isAdmin: showAdmin }) => {
     const items = showAdmin ? NAV_ITEMS_ADMIN : NAV_ITEMS_COACH;
@@ -460,6 +472,28 @@ export default function CoachAssessment() {
             <Hdr label="FITNESS PROGRAM" onLogoClick={signOut} />
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading fitness program...</div>}>
                 <FitnessProgramAdmin />
+            </Suspense>
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+        </div>
+    );
+
+    // ═══ COACH SCHEDULER (ADMIN) ═══
+    if (cView === "schedule" && isAdmin && COACH_SCHEDULER_ENABLED) return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Hdr label="COACH SCHEDULE" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading scheduler...</div>}>
+                <CoachScheduler />
+            </Suspense>
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+        </div>
+    );
+
+    // ═══ MY AVAILABILITY (COACH SELF-SERVICE) ═══
+    if (cView === "availability" && COACH_SCHEDULER_ENABLED) return (
+        <div style={{ minHeight: '100vh', background: B.g50, paddingBottom: 60 }}>
+            <Hdr label="MY AVAILABILITY" onLogoClick={signOut} />
+            <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading availability...</div>}>
+                <CoachAvailability />
             </Suspense>
             <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
         </div>
