@@ -391,6 +391,17 @@ export default function CoachScheduler() {
     // Days that actually have at least one session, for the list view (skip empty days)
     const populatedDays = useMemo(() => allDays.filter(d => sessionsByDay.has(d)), [allDays, sessionsByDay]);
 
+    // Grid view shows one week at a time. The visible week starts on the Monday
+    // of whatever windowStart points to. Nav buttons in grid mode shift by ±7 days.
+    const weekAnchor = useMemo(() => weekStart(windowStart), [windowStart]);
+    const weekDays = useMemo(() => daysBetween(weekAnchor, addDays(weekAnchor, 6)), [weekAnchor]);
+
+    // Nav handlers — different step + label depending on view
+    const isGrid = view === 'grid';
+    const navStep = isGrid ? 7 : 14;
+    const navPrevLabel = isGrid ? '‹ Week' : '‹ 2 weeks';
+    const navNextLabel = isGrid ? 'Week ›' : '2 weeks ›';
+
     // ─── Render ──────────────────────────────────────────────────────────
     return (
         <div data-testid="coach-scheduler" style={{ minHeight: '100vh', background: B.g50, fontFamily: F, paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
@@ -400,7 +411,9 @@ export default function CoachScheduler() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 9, fontWeight: 800, color: B.g400, letterSpacing: 1.5 }}>COACH SCHEDULER</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: B.nvD }}>
-                            {longLabel(windowStart)} → {longLabel(horizonEnd)}
+                            {isGrid
+                                ? `Week of ${longLabel(weekAnchor)}`
+                                : `${longLabel(windowStart)} → ${longLabel(horizonEnd)}`}
                         </div>
                     </div>
                     <button onClick={() => setShowRules(true)}
@@ -409,14 +422,14 @@ export default function CoachScheduler() {
                     </button>
                 </div>
 
-                {/* Date nav */}
+                {/* Date nav — step size + labels swap based on view */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-                    <button onClick={() => setWindowStart(addDays(windowStart, -14))}
-                        style={navBtn}>‹ 2 weeks</button>
+                    <button onClick={() => setWindowStart(addDays(windowStart, -navStep))}
+                        style={navBtn}>{navPrevLabel}</button>
                     <button onClick={() => setWindowStart(todayKey())}
                         style={{ ...navBtn, background: B.bl, color: B.w, borderColor: B.bl }}>Today</button>
-                    <button onClick={() => setWindowStart(addDays(windowStart, 14))}
-                        style={navBtn}>2 weeks ›</button>
+                    <button onClick={() => setWindowStart(addDays(windowStart, navStep))}
+                        style={navBtn}>{navNextLabel}</button>
                     <div style={{ flex: 1 }} />
                     <button onClick={() => setView(view === 'list' ? 'grid' : 'list')}
                         style={navBtn} title="Toggle list / grid">
@@ -470,7 +483,7 @@ export default function CoachScheduler() {
                     })}
                 </div>
             ) : (
-                <GridView allDays={allDays} sessionsByDay={sessionsByDay} squadsById={squadsById} onPick={setOpenRow} />
+                <WeekGridView weekDays={weekDays} sessionsByDay={sessionsByDay} squadsById={squadsById} onPick={setOpenRow} />
             )}
 
             {/* Drawer */}
@@ -498,28 +511,45 @@ export default function CoachScheduler() {
     );
 }
 
-// ─── Grid view: 60-day horizontal strip (desktop) ────────────────────────
-const GridView = ({ allDays, sessionsByDay, squadsById, onPick }) => {
+// ─── Grid view: one calendar week (Mon–Sun) ──────────────────────────────
+// Side-by-side 7-column grid on viewports ≥720px; falls back to a horizontally
+// scrollable strip below that so each cell stays readable on a phone.
+const WeekGridView = ({ weekDays, sessionsByDay, squadsById, onPick }) => {
     return (
-        <div style={{ overflowX: 'auto', padding: 12, scrollSnapType: 'x mandatory' }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-                {allDays.map(d => {
+        <div style={{ overflowX: 'auto', padding: 12 }}>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))',
+                gap: 6,
+                minWidth: 700,
+            }}>
+                {weekDays.map(d => {
                     const rows = sessionsByDay.get(d) || [];
                     const isWE = ['Sat', 'Sun'].includes(dayName(d));
                     return (
                         <div key={d} style={{
-                            flex: '0 0 160px', scrollSnapAlign: 'start',
                             background: B.w, border: `1px solid ${B.g200}`, borderRadius: 8,
-                            padding: 8, minHeight: 120,
-                            opacity: isPast(d) ? 0.5 : 1,
+                            padding: 8, minHeight: 140,
+                            opacity: isPast(d) ? 0.55 : 1,
                             borderTop: `3px solid ${isToday(d) ? B.bl : isWE ? B.pk : B.bl}`,
+                            display: 'flex', flexDirection: 'column',
                         }}>
-                            <div style={{ fontSize: 10, fontWeight: 800, color: isToday(d) ? B.bl : B.nvD, marginBottom: 6 }}>
-                                {dayName(d).toUpperCase()} {shortLabel(d).split(' ').slice(1).join(' ')}
-                                {isToday(d) && <span style={{ marginLeft: 4, fontSize: 8, color: B.bl }}>·NOW</span>}
+                            {/* Day header */}
+                            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: isToday(d) ? B.bl : B.nvD, letterSpacing: 0.5 }}>
+                                    {dayName(d).toUpperCase()}
+                                </div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: B.g600, marginTop: 2 }}>
+                                    {shortLabel(d).split(' ').slice(1).join(' ')}
+                                </div>
+                                {isToday(d) && (
+                                    <div style={{ fontSize: 8, fontWeight: 800, color: B.bl, marginTop: 2, letterSpacing: 0.4 }}>·NOW</div>
+                                )}
                             </div>
+
+                            {/* Sessions for the day, or empty marker */}
                             {rows.length === 0 ? (
-                                <div style={{ fontSize: 9, color: B.g400, fontStyle: 'italic' }}>—</div>
+                                <div style={{ fontSize: 9, color: B.g400, fontStyle: 'italic', textAlign: 'center', marginTop: 'auto', marginBottom: 'auto' }}>—</div>
                             ) : rows.map(r => (
                                 <div key={r.session_id} onClick={() => onPick(r)}
                                     style={{ background: B.g50, borderRadius: 6, padding: 6, marginBottom: 6, cursor: 'pointer', borderLeft: `3px solid ${r.total_gaps > 0 ? B.red : B.bl}` }}>
