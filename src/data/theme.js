@@ -17,6 +17,9 @@ export const sGrad = { background: `linear-gradient(135deg,${B.nvD} 0%,${B.bl} 6
 
 // Responsive helpers — call these in render for live responsiveness
 export function isDesktop() { return typeof window !== 'undefined' && window.innerWidth >= 768; }
+// Wider breakpoint for layouts that need real estate (admin sidebar shell).
+// 1024px = iPad landscape and most laptops. Below this, sidebars become drawers.
+export function isWide() { return typeof window !== 'undefined' && window.innerWidth >= 1024; }
 export function getDkWrap() { return isDesktop() ? { maxWidth: 780, margin: '0 auto', padding: '0 16px' } : {}; }
 export function getDSZ() { return isDesktop() ? 32 : 26; }
 export function getDSF() { return isDesktop() ? 10 : 9; }

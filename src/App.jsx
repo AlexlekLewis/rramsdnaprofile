@@ -11,6 +11,12 @@ import { ErrorBoundary } from "./shared/ErrorBoundary";
 const PlayerOnboarding = React.lazy(() => import("./player/PlayerOnboarding"));
 const PlayerPortal = React.lazy(() => import("./player/PlayerPortal"));
 const CoachAssessment = React.lazy(() => import("./coach/CoachAssessment"));
+const AdminShell = React.lazy(() => import("./coach/AdminShell"));
+
+// New CRM-style admin shell. Default ON (kill-switch only) per memory
+// `feedback_feature_flag_defaults.md`. Super_admin role still gates visibility,
+// so coaches and players never see this regardless of flag state.
+const ADMIN_SHELL_ENABLED = import.meta.env.VITE_ENABLE_ADMIN_SHELL !== "false";
 
 // ═══ DATA & ENGINE ═══
 import { B, F, LOGO, sGrad } from "./data/theme";
@@ -56,6 +62,9 @@ const EyeToggle = React.memo(({ show, onToggle }) => (
 
 function MainApp() {
   const { session, authLoading, authStep, setAuthStep, portal, isAdmin, signIn, signUp, signOut, userProfile, joinRole, setJoinRole } = useAuth();
+  // Super_admin sees the new CRM-style shell when the kill-switch is ON.
+  // Coach + admin (non-super) keep the existing CoachAssessment unchanged.
+  const useAdminShell = ADMIN_SHELL_ENABLED && portal === 'super_admin';
   const { engineLoading } = useEngine();
 
   const [loginUsername, setLoginUsername] = useState('');
@@ -370,7 +379,10 @@ function MainApp() {
     return (
       <>
         {RECOVERY_ENABLED && <RecoveryEmailPrompt />}
-        <CoachAssessment />
+        {useAdminShell
+          ? <AdminShell userProfile={userProfile} onSignOut={signOut} />
+          : <CoachAssessment />
+        }
       </>
     );
   }
