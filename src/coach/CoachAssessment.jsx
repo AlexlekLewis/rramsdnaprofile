@@ -65,10 +65,10 @@ const NAV_ITEMS_COACH = [
     ...(COACH_SCHEDULER_ENABLED ? [NAV_ITEM_AVAILABILITY] : []),
 ];
 
-const CoachNavBar = React.memo(({ active, onNavigate, isAdmin: showAdmin }) => {
+const CoachNavBar = React.memo(({ active, onNavigate, isAdmin: showAdmin, leftOffset = 0 }) => {
     const items = showAdmin ? NAV_ITEMS_ADMIN : NAV_ITEMS_COACH;
     return (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 56, background: B.w, borderTop: `1px solid ${B.g200}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 100, fontFamily: F }}>
+        <div style={{ position: 'fixed', bottom: 0, left: leftOffset, right: 0, height: 56, background: B.w, borderTop: `1px solid ${B.g200}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 100, fontFamily: F }}>
             {items.map(item => {
                 const isActive = active === item.id;
                 return (
@@ -214,9 +214,33 @@ const SectionLabel = ({ label, count, color }) => (
     </div>
 );
 
-export default function CoachAssessment() {
+export default function CoachAssessment({ inAdminShell = false } = {}) {
     const { session, portal, isAdmin, signOut } = useAuth();
     const { compTiers, dbWeights, engineConst } = useEngine();
+
+    // When wrapped inside the new AdminShell on a wide viewport (≥1024px),
+    // the left 240px is occupied by the persistent sidebar. Offset the bottom
+    // nav so it doesn't render over the sidebar's footer (sign-out button etc.).
+    // Reactive to viewport changes via matchMedia listener.
+    const [navLeftOffset, setNavLeftOffset] = useState(() => {
+        if (typeof window === 'undefined') return 0;
+        return inAdminShell && window.matchMedia('(min-width: 1024px)').matches ? 240 : 0;
+    });
+    useEffect(() => {
+        if (typeof window === 'undefined' || !inAdminShell) {
+            setNavLeftOffset(0);
+            return;
+        }
+        const mql = window.matchMedia('(min-width: 1024px)');
+        const update = () => setNavLeftOffset(mql.matches ? 240 : 0);
+        update();
+        if (mql.addEventListener) {
+            mql.addEventListener('change', update);
+            return () => mql.removeEventListener('change', update);
+        }
+        mql.addListener(update);
+        return () => mql.removeListener(update);
+    }, [inAdminShell]);
 
     const [players, setPlayers] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -442,7 +466,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading dashboard...</div>}>
                 <AdminDashboard onBack={() => setCView("list")} />
             </Suspense>
-            {showNavBar && <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />}
+            {showNavBar && <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />}
         </div>
     );
 
@@ -453,7 +477,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading profiles...</div>}>
                 <AdminProfiles />
             </Suspense>
-            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
         </div>
     );
 
@@ -464,7 +488,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading squad roster...</div>}>
                 <SquadRoster />
             </Suspense>
-            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
         </div>
     );
 
@@ -492,7 +516,7 @@ export default function CoachAssessment() {
                         <PlayerFitnessHistory playerId={p?.dnaId || selP} />
                     </Suspense>
                 </div>
-                <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} />
+                <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
             </div>
         );
     }
@@ -504,7 +528,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading fitness program...</div>}>
                 <FitnessProgramAdmin />
             </Suspense>
-            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
         </div>
     );
 
@@ -515,7 +539,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading scheduler...</div>}>
                 <CoachScheduler />
             </Suspense>
-            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
         </div>
     );
 
@@ -526,7 +550,7 @@ export default function CoachAssessment() {
             <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontSize: 12, fontFamily: F }}>Loading availability...</div>}>
                 <CoachAvailability />
             </Suspense>
-            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} />
+            <CoachNavBar active={cView} onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
         </div>
     );
 
@@ -709,7 +733,7 @@ export default function CoachAssessment() {
                 </div>);
             })()}
         </div>
-        <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} />
+        <CoachNavBar active="list" onNavigate={handleNav} isAdmin={isAdmin} leftOffset={navLeftOffset} />
     </div>);
 
     // ═══ ACCOUNTS PANEL (admin only) ═══
