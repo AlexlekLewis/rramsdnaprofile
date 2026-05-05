@@ -732,4 +732,22 @@ BEGIN
 END;
 $$;
 
+
+-- ══════════════════════════════════════════════════════════════
+-- 6. PLAYER PERFORMANCE METRICS — multi-attempt support
+--    Date: 2026-05-05
+--    Purpose: support 3-attempt tests like Exit Velocity baseline.
+--    One row per attempt; group by (player_id, metric_type, recorded_at).
+--    Pure additive — existing single-attempt rows get NULL.
+-- ══════════════════════════════════════════════════════════════
+
+ALTER TABLE public.player_performance_metrics
+    ADD COLUMN IF NOT EXISTS attempt_number smallint;
+
+COMMENT ON COLUMN public.player_performance_metrics.attempt_number IS
+    'Attempt number within a test session (e.g. 1/2/3 for 3-attempt exit velocity). NULL for single-attempt metrics.';
+
+CREATE INDEX IF NOT EXISTS idx_ppm_player_metric_date
+    ON public.player_performance_metrics(player_id, metric_type, recorded_at DESC);
+
 GRANT EXECUTE ON FUNCTION public.register_new_user(text, text) TO authenticated;
