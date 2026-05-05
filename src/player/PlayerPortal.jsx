@@ -20,6 +20,7 @@ import { supabase } from "../supabaseClient";
 const FITNESS_PLAYER_ENABLED = import.meta.env.VITE_ENABLE_FITNESS_PLAYER !== "false";
 
 const FitnessHome = React.lazy(() => import("./FitnessHome"));
+const Neurovision = React.lazy(() => import("./Neurovision"));
 
 // Parse "Tue 5-7pm" → { dayLong: "Tuesday", dayShort: "Tue", time: "5–7 pm" }
 function parseSession(raw) {
@@ -213,6 +214,15 @@ export default function PlayerPortal() {
         </div>
     );
 
+    if (view === "neurovision") return (
+        <div style={{ minHeight: "100vh", background: B.g50, fontFamily: F }}>
+            <PortalHeader title="Neurovision" showBack onBack={() => setView('home')} onSignOut={handleSignOut} userName={userProfile?.full_name} />
+            <React.Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: B.g400, fontFamily: F, fontSize: 13 }}>Loading…</div>}>
+                <Neurovision />
+            </React.Suspense>
+        </div>
+    );
+
     // ── Stat card helper ──
     const StatCard = ({ value, label, color, icon }) => (
         <div style={{ ...sCard, flex: 1, padding: 14, marginBottom: 0, textAlign: 'center', minWidth: 0 }}>
@@ -357,6 +367,28 @@ export default function PlayerPortal() {
                         <div style={{ fontSize: 22, opacity: 0.8 }}>›</div>
                     </div>
                 )}
+
+                {/* ═══ NEUROVISION — partnership with Shah Neurovision Sports Training ═══ */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: B.g600, fontFamily: F, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8, marginTop: 4 }}>
+                    Neurovision
+                </div>
+                <div onClick={() => setView('neurovision')} style={{
+                    cursor: 'pointer', padding: 16, marginBottom: 20, borderRadius: 14,
+                    background: '#000', color: B.w, display: 'flex', alignItems: 'center', gap: 14,
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.18)', border: '1px solid #1a1a1a',
+                }}>
+                    <img
+                        src="/neurovision-logo.png"
+                        alt="Shah Neurovision Sports Training"
+                        style={{ height: 52, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 9, fontWeight: 800, color: '#3FCFC2', fontFamily: F, letterSpacing: 1.2, textTransform: 'uppercase' }}>Week 0</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, fontFamily: F, marginTop: 2 }}>Cricket Neural Warm-Up</div>
+                        <div style={{ fontSize: 11, fontFamily: F, opacity: 0.8, marginTop: 2 }}>5–7 minutes · 5 vision drills before batting</div>
+                    </div>
+                    <div style={{ fontSize: 22, opacity: 0.8 }}>›</div>
+                </div>
 
                 {/* ═══ RECENT SESSIONS CARD ═══ */}
                 <div style={{ ...sCard, padding: 16 }}>
